@@ -138,6 +138,18 @@ func TestDB_AuthService_Login(t *testing.T) {
 			So(len(key), ShouldBeGreaterThan, 20)
 		})
 
+		Convey("admin: legacy short password from init.sql still works", func() {
+			// bcrypt hash of "12345" — same one init.sql seeds for admin and
+			// every candidate. Login must accept it even though Register
+			// would reject 12345 today via the password policy.
+			const seedHash = "$2y$14$4IpqlaJ2Rvfgs.wb8f6lPODVLb/Ygl6zw1ZCUKz5CuT6WB6CV44AG"
+			seedAdminWithRawHash(t, ctx, f.dbo, "admin.legacy", seedHash)
+
+			key, err := auth.Login(ctx, "admin.legacy", "12345", UserTypeAdmin)
+			So(err, ShouldBeNil)
+			So(len(key), ShouldBeGreaterThan, 20)
+		})
+
 		Convey("admin: wrong password → ErrInvalidLoginPassword", func() {
 			seedAdmin(t, ctx, f.dbo, "admin.dave")
 			_, err := auth.Login(ctx, "admin.dave", "wrong-pass", UserTypeAdmin)
@@ -220,12 +232,20 @@ func TestDB_AuthService_Helpers(t *testing.T) {
 			}
 		})
 
-		Convey("validateCredentials covers required + format + policy", func() {
-			So(validateCredentials("", "passw0rd!"), ShouldEqual, ErrInvalidLoginPassword)
-			So(validateCredentials("ok.login", ""), ShouldEqual, ErrInvalidLoginPassword)
-			So(validateCredentials("BAD HANDLE", "passw0rd!"), ShouldEqual, ErrInvalidLoginPassword)
-			So(validateCredentials("ok", "short"), ShouldEqual, ErrPasswordPolicy)
-			So(validateCredentials("ok", "passw0rd!"), ShouldBeNil)
+		Convey("validateLoginCredentials only rejects empty fields", func() {
+			So(validateLoginCredentials("", "passw0rd!"), ShouldEqual, ErrInvalidLoginPassword)
+			So(validateLoginCredentials("anything", ""), ShouldEqual, ErrInvalidLoginPassword)
+			// Short password and bad format pass — bcrypt path takes over.
+			So(validateLoginCredentials("anything", "12345"), ShouldBeNil)
+			So(validateLoginCredentials("BAD HANDLE", "12345"), ShouldBeNil)
+		})
+
+		Convey("validateRegisterCredentials enforces full format + policy", func() {
+			So(validateRegisterCredentials("", "passw0rd!"), ShouldEqual, ErrInvalidLoginPassword)
+			So(validateRegisterCredentials("ok.login", ""), ShouldEqual, ErrInvalidLoginPassword)
+			So(validateRegisterCredentials("BAD HANDLE", "passw0rd!"), ShouldEqual, ErrInvalidLoginPassword)
+			So(validateRegisterCredentials("ok", "short"), ShouldEqual, ErrPasswordPolicy)
+			So(validateRegisterCredentials("ok", "passw0rd!"), ShouldBeNil)
 		})
 
 		Convey("checkHash matches bcrypt round-trip", func() {

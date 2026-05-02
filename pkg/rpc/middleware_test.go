@@ -105,18 +105,17 @@ func TestDB_Middleware_BypassWhitelist(t *testing.T) {
 				So(r.Error.Code, ShouldNotEqual, http.StatusUnauthorized)
 			}
 		})
+
+		Convey("dashboard.summary without header → 200", func() {
+			r := rpcCall(t, hs, "", NSDashboard, RPC.DashboardService.Summary)
+			So(r.Error, ShouldBeNil)
+		})
 	})
 }
 
 func TestDB_Middleware_RejectsUnauthenticated(t *testing.T) {
 	Convey("Protected methods require admin auth", t, func() {
 		hs, _ := newHTTPHarness(t)
-
-		Convey("dashboard.summary without header → 401", func() {
-			r := rpcCall(t, hs, "", NSDashboard, RPC.DashboardService.Summary)
-			So(r.Error, ShouldNotBeNil)
-			So(r.Error.Code, ShouldEqual, http.StatusUnauthorized)
-		})
 
 		Convey("stage.add without header → 401", func() {
 			r := rpcCall(t, hs, "", NSStage, RPC.StageService.Add, map[string]any{
@@ -168,12 +167,6 @@ func TestDB_Middleware_RejectsCandidateOnAdminMethod(t *testing.T) {
 		So(userResp.Error, ShouldBeNil)
 		var candKey string
 		So(json.Unmarshal(userResp.Result, &candKey), ShouldBeNil)
-
-		Convey("candidate authKey on dashboard.summary → 401", func() {
-			r := rpcCall(t, hs, candKey, NSDashboard, RPC.DashboardService.Summary)
-			So(r.Error, ShouldNotBeNil)
-			So(r.Error.Code, ShouldEqual, http.StatusUnauthorized)
-		})
 
 		Convey("candidate authKey on candidate.add → 401", func() {
 			r := rpcCall(t, hs, candKey, NSCandidate, RPC.CandidateService.Add, map[string]any{

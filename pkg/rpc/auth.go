@@ -61,7 +61,7 @@ func NewAuthService(dbo db.DB, logger embedlog.Logger) *AuthService {
 //zenrpc:400 Validation Error
 //zenrpc:500 Internal Error
 func (s AuthService) Login(ctx context.Context, login, password, userType string) (string, error) {
-	if err := validateCredentials(login, password); err != nil {
+	if err := validateLoginCredentials(login, password); err != nil {
 		return "", err
 	}
 	switch userType {
@@ -86,7 +86,7 @@ func (s AuthService) Login(ctx context.Context, login, password, userType string
 //zenrpc:400 Validation Error
 //zenrpc:500 Internal Error
 func (s AuthService) Register(ctx context.Context, login, password, userType string) (string, error) {
-	if err := validateCredentials(login, password); err != nil {
+	if err := validateRegisterCredentials(login, password); err != nil {
 		return "", err
 	}
 	if userType != UserTypeUser {
@@ -222,9 +222,20 @@ func mapAuthErr(err error) *zenrpc.Error {
 	return nil
 }
 
-// validateCredentials enforces format and policy on login/password before any
-// DB read. Returns a typed RPC error so callers can return it directly.
-func validateCredentials(login, password string) error {
+// validateLoginCredentials only rejects empty login/password — anything else
+// (login format, password length) is left to the bcrypt path so we don't
+// (a) lock out users whose passwords predate the current policy, and
+// (b) leak format hints via fast-path responses on bad logins.
+func validateLoginCredentials(login, password string) error {
+	if login == "" || password == "" {
+		return ErrInvalidLoginPassword
+	}
+	return nil
+}
+
+// validateRegisterCredentials enforces full format + policy on new accounts:
+// login matches authLoginRegex, password is within passwordMinLen..passwordMaxLen.
+func validateRegisterCredentials(login, password string) error {
 	if login == "" || password == "" {
 		return ErrInvalidLoginPassword
 	}

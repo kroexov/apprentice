@@ -83,6 +83,8 @@ func isOpenMethod(ns, method string) bool {
 		return method == RPC.CandidateService.Get || method == RPC.CandidateService.GetByID
 	case NSStage:
 		return method == RPC.StageService.Get || method == RPC.StageService.GetByID
+	case NSDashboard:
+		return method == RPC.DashboardService.Summary
 	}
 	return false
 }

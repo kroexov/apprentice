@@ -27,6 +27,10 @@ CREATE INDEX "IX_FK_users_statusId_users" ON "users" USING BTREE (
 	"statusId"
 );
 
+-- Partial unique on login: prevents duplicate logins for non-deleted users
+-- and matches the partial-unique pattern used on candidates.login.
+CREATE UNIQUE INDEX "users_login_key" ON "users" ("login") WHERE "statusId" <> 3;
+
 -- Partial index on authKey for the RPC/VT auth middleware lookup.
 CREATE INDEX "IX_users_authKey" ON "users" ("authKey") WHERE "authKey" IS NOT NULL;
 

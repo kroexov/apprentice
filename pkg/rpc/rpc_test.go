@@ -90,10 +90,18 @@ func seedAdmin(t *testing.T, ctx context.Context, dbo db.DB, login string) strin
 	if err != nil {
 		t.Fatalf("hash admin pwd: %v", err)
 	}
+	return seedAdminWithRawHash(t, ctx, dbo, login, hash)
+}
+
+// seedAdminWithRawHash inserts an admin with a precomputed bcrypt hash —
+// useful when a test needs to login with a password that doesn't satisfy the
+// current Register policy (e.g. the seed password "12345" from init.sql).
+func seedAdminWithRawHash(t *testing.T, ctx context.Context, dbo db.DB, login, bcryptHash string) string {
+	t.Helper()
 	commonRepo := db.NewCommonRepo(dbo)
 	u, err := commonRepo.AddUser(ctx, &db.User{
 		Login:    login,
-		Password: hash,
+		Password: bcryptHash,
 		StatusID: db.StatusEnabled,
 	})
 	if err != nil {

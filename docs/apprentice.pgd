@@ -39,6 +39,10 @@
       <fk name="users_statusId_fkey" to-table="statuses" on-delete="restrict">
         <column name="statusId" references="statusId"></column>
       </fk>
+      <!-- Partial unique on login: deleted rows free the login for re-use. -->
+      <index name="users_login_key" using="btree" unique="true" where="&quot;statusId&quot; &lt;&gt; 3">
+        <column name="login"></column>
+      </index>
     </table>
 
     <!-- ============================================================ -->
