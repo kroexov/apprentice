@@ -14,6 +14,17 @@ const (
 	NSStage     = "stage"
 	NSCandidate = "candidate"
 	NSDashboard = "dashboard"
+	NSAuth      = "auth"
+)
+
+var (
+	ErrUnauthorized = zenrpc.NewStringError(http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
+
+	ErrInvalidLoginPassword = zenrpc.NewStringError(http.StatusBadRequest, "invalid login or password")
+	ErrLoginTaken           = zenrpc.NewStringError(http.StatusBadRequest, "login is already taken")
+	ErrInvalidUserType      = zenrpc.NewStringError(http.StatusBadRequest, "invalid userType")
+	ErrPasswordPolicy       = zenrpc.NewStringError(http.StatusBadRequest, "password policy violation")
+	ErrNoStagesAvailable    = zenrpc.NewStringError(http.StatusBadRequest, "register requires at least one stage")
 )
 
 func InternalError(err error) *zenrpc.Error {
@@ -35,6 +46,9 @@ func New(dbo db.DB, logger embedlog.Logger, isDevel bool) *zenrpc.Server {
 		AllowCORS: true,
 	})
 
+	commonRepo := db.NewCommonRepo(dbo)
+	apprRepo := db.NewApprenticeRepo(dbo)
+
 	rpc.Use(
 		zm.WithDevel(isDevel),
 		zm.WithHeaders(),
@@ -50,11 +64,14 @@ func New(dbo db.DB, logger embedlog.Logger, isDevel bool) *zenrpc.Server {
 		zm.WithErrorSLog(logger.Print, zm.DefaultServerName, nil),
 	)
 
+	rpc.Use(authMiddleware(&commonRepo, &apprRepo, logger))
+
 	// services
 	rpc.RegisterAll(map[string]zenrpc.Invoker{
 		NSStage:     NewStageService(dbo, logger),
 		NSCandidate: NewCandidateService(dbo, logger),
 		NSDashboard: NewDashboardService(dbo, logger),
+		NSAuth:      NewAuthService(dbo, logger),
 	})
 
 	return rpc

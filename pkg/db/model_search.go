@@ -282,6 +282,10 @@ type CandidateSearch struct {
 	ID               *int
 	Name             *string
 	Handle           *string
+	Login            *string
+	Password         *string
+	AuthKey          *string
+	LastActivityAt   *time.Time
 	City             *string
 	Age              *int
 	Bio              *string
@@ -296,6 +300,7 @@ type CandidateSearch struct {
 	IDs              []int
 	NameILike        *string
 	HandleILike      *string
+	LoginILike       *string
 	CityILike        *string
 	BioILike         *string
 	AvatarColorILike *string
@@ -315,6 +320,18 @@ func (cs *CandidateSearch) Apply(query *orm.Query) *orm.Query {
 	}
 	if cs.Handle != nil {
 		cs.where(query, Tables.Candidate.Alias, Columns.Candidate.Handle, cs.Handle)
+	}
+	if cs.Login != nil {
+		cs.where(query, Tables.Candidate.Alias, Columns.Candidate.Login, cs.Login)
+	}
+	if cs.Password != nil {
+		cs.where(query, Tables.Candidate.Alias, Columns.Candidate.Password, cs.Password)
+	}
+	if cs.AuthKey != nil {
+		cs.where(query, Tables.Candidate.Alias, Columns.Candidate.AuthKey, cs.AuthKey)
+	}
+	if cs.LastActivityAt != nil {
+		cs.where(query, Tables.Candidate.Alias, Columns.Candidate.LastActivityAt, cs.LastActivityAt)
 	}
 	if cs.City != nil {
 		cs.where(query, Tables.Candidate.Alias, Columns.Candidate.City, cs.City)
@@ -357,6 +374,9 @@ func (cs *CandidateSearch) Apply(query *orm.Query) *orm.Query {
 	}
 	if cs.HandleILike != nil {
 		Filter{Columns.Candidate.Handle, *cs.HandleILike, SearchTypeILike, false}.Apply(query)
+	}
+	if cs.LoginILike != nil {
+		Filter{Columns.Candidate.Login, *cs.LoginILike, SearchTypeILike, false}.Apply(query)
 	}
 	if cs.CityILike != nil {
 		Filter{Columns.Candidate.City, *cs.CityILike, SearchTypeILike, false}.Apply(query)

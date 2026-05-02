@@ -2,6 +2,8 @@ package rpc
 
 import (
 	"context"
+	cryptorand "crypto/rand"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"regexp"
@@ -126,41 +128,76 @@ func (s CandidateService) GetByID(ctx context.Context, id int) (*CandidateDetail
 	}, nil
 }
 
-// Add creates a new candidate.
+// Add creates a new candidate and returns it together with a freshly generated
+// one-time password. This is the ONLY response that ever carries a password —
+// Get/GetByID/Update strip it. The caller is expected to hand the password to
+// the candidate once and not store it.
 //
 //zenrpc:candidate Candidate
-//zenrpc:return Candidate
+//zenrpc:return CandidateWithPassword
 //zenrpc:400 Validation Error
 //zenrpc:500 Internal Error
-func (s CandidateService) Add(ctx context.Context, candidate Candidate) (*Candidate, error) {
+func (s CandidateService) Add(ctx context.Context, candidate Candidate) (*CandidateWithPassword, error) {
 	if ve := s.isValid(ctx, candidate, false); ve.HasErrors() {
 		return nil, ve.Error()
 	}
-	stage, err := s.repo.StageByID(ctx, candidate.CurrentStageID)
+
+	plainPassword := generateInitialPassword()
+	hashed, err := passwordHash(plainPassword)
 	if err != nil {
 		return nil, InternalError(err)
 	}
-	if stage == nil {
-		return nil, ErrInvalidCurrentStage
-	}
 
-	d := candidate.ToDB()
-	d.ID = 0
-	d.CompletedAt = nil
-	created, err := s.repo.AddCandidate(ctx, d)
+	var full *db.Candidate
+	err = s.dbo.RunInTransaction(ctx, func(tx *pg.Tx) error {
+		txRepo := s.repo.WithTransaction(tx)
+
+		stage, txErr := txRepo.StageByID(ctx, candidate.CurrentStageID)
+		if txErr != nil {
+			return txErr
+		}
+		if stage == nil {
+			return ErrInvalidCurrentStage
+		}
+
+		d := candidate.ToDB()
+		d.ID = 0
+		d.CompletedAt = nil
+		d.Password = hashed
+		created, txErr := txRepo.AddCandidate(ctx, d)
+		if txErr != nil {
+			if db.IsUniqueViolation(txErr) {
+				return ErrHandleTaken
+			}
+			return txErr
+		}
+
+		full, txErr = txRepo.CandidateByID(ctx, created.ID, txRepo.FullCandidate())
+		return txErr
+	})
 	if err != nil {
-		if db.IsUniqueViolation(err) {
-			return nil, ErrHandleTaken
+		var zerr *zenrpc.Error
+		if errors.As(err, &zerr) {
+			return nil, zerr
 		}
 		return nil, InternalError(err)
 	}
 
-	full, err := s.repo.CandidateByID(ctx, created.ID, s.repo.FullCandidate())
-	if err != nil {
-		return nil, InternalError(err)
+	s.Print(ctx, "candidate added", "candidateId", full.ID, "stageId", full.CurrentStageID)
+	return &CandidateWithPassword{
+		Candidate: *NewCandidate(full),
+		Password:  plainPassword,
+	}, nil
+}
+
+// generateInitialPassword returns a random 12-char URL-safe password used by
+// candidate.Add. Surfaced once in the response — never stored client-side.
+func generateInitialPassword() string {
+	b := make([]byte, 9) // 9 bytes → 12 base64url chars, well above passwordMinLen.
+	if _, err := cryptorand.Read(b); err != nil {
+		panic("rpc/candidate: crypto/rand failure: " + err.Error())
 	}
-	s.Print(ctx, "candidate added", "candidateId", created.ID, "handle", created.Handle, "stageId", created.CurrentStageID)
-	return NewCandidate(full), nil
+	return base64.RawURLEncoding.EncodeToString(b)
 }
 
 // Update changes candidate's basic fields. Use Advance/Rollback for stage progression.
@@ -171,46 +208,63 @@ func (s CandidateService) Add(ctx context.Context, candidate Candidate) (*Candid
 //zenrpc:400 Validation Error
 //zenrpc:500 Internal Error
 func (s CandidateService) Update(ctx context.Context, candidate Candidate) (bool, error) {
-	cur, err := s.repo.CandidateByID(ctx, candidate.ID)
-	if err != nil {
-		return false, InternalError(err)
-	}
-	if cur == nil {
-		return false, ErrCandidateNotFound
-	}
-	if ve := s.isValid(ctx, candidate, true); ve.HasErrors() {
-		return false, ve.Error()
-	}
+	var ok bool
+	err := s.dbo.RunInTransaction(ctx, func(tx *pg.Tx) error {
+		txRepo := s.repo.WithTransaction(tx)
 
-	patch := candidate.ToDB()
-	cur.Name = patch.Name
-	cur.Handle = patch.Handle
-	cur.City = patch.City
-	cur.Age = patch.Age
-	cur.Bio = patch.Bio
-	cur.AvatarColor = patch.AvatarColor
-	cur.Initials = patch.Initials
-	cur.AvatarUrl = patch.AvatarUrl
-	cur.Strengths = patch.Strengths
-	cur.Weaknesses = patch.Weaknesses
-	cur.UpdatedAt = time.Now()
+		cur, err := txRepo.CandidateByID(ctx, candidate.ID)
+		if err != nil {
+			return err
+		}
+		if cur == nil {
+			return ErrCandidateNotFound
+		}
+		// Validation does only reads; running it on the outer repo is fine
+		// — uniqueness errors will surface either here or via UniqueViolation.
+		if ve := s.isValid(ctx, candidate, true); ve.HasErrors() {
+			return ve.Error()
+		}
 
-	ok, err := s.repo.UpdateCandidate(ctx, cur, db.WithColumns(
-		db.Columns.Candidate.Name,
-		db.Columns.Candidate.Handle,
-		db.Columns.Candidate.City,
-		db.Columns.Candidate.Age,
-		db.Columns.Candidate.Bio,
-		db.Columns.Candidate.AvatarColor,
-		db.Columns.Candidate.Initials,
-		db.Columns.Candidate.AvatarUrl,
-		db.Columns.Candidate.Strengths,
-		db.Columns.Candidate.Weaknesses,
-		db.Columns.Candidate.UpdatedAt,
-	))
+		patch := candidate.ToDB()
+		cur.Name = patch.Name
+		cur.Handle = patch.Handle
+		cur.Login = patch.Login
+		cur.City = patch.City
+		cur.Age = patch.Age
+		cur.Bio = patch.Bio
+		cur.AvatarColor = patch.AvatarColor
+		cur.Initials = patch.Initials
+		cur.AvatarUrl = patch.AvatarUrl
+		cur.Strengths = patch.Strengths
+		cur.Weaknesses = patch.Weaknesses
+		cur.UpdatedAt = time.Now()
+
+		ok, err = txRepo.UpdateCandidate(ctx, cur, db.WithColumns(
+			db.Columns.Candidate.Name,
+			db.Columns.Candidate.Handle,
+			db.Columns.Candidate.Login,
+			db.Columns.Candidate.City,
+			db.Columns.Candidate.Age,
+			db.Columns.Candidate.Bio,
+			db.Columns.Candidate.AvatarColor,
+			db.Columns.Candidate.Initials,
+			db.Columns.Candidate.AvatarUrl,
+			db.Columns.Candidate.Strengths,
+			db.Columns.Candidate.Weaknesses,
+			db.Columns.Candidate.UpdatedAt,
+		))
+		if err != nil {
+			if db.IsUniqueViolation(err) {
+				return ErrHandleTaken
+			}
+			return err
+		}
+		return nil
+	})
 	if err != nil {
-		if db.IsUniqueViolation(err) {
-			return false, ErrHandleTaken
+		var zerr *zenrpc.Error
+		if errors.As(err, &zerr) {
+			return false, zerr
 		}
 		return false, InternalError(err)
 	}
@@ -500,6 +554,14 @@ func (s CandidateService) isValid(ctx context.Context, c Candidate, isUpdate boo
 	case !candidateHandleRegex.MatchString(c.Handle):
 		v.Append("handle", FieldErrorFormat)
 	}
+	switch {
+	case c.Login == "":
+		v.Append("login", FieldErrorRequired)
+	case utf8.RuneCountInString(c.Login) > 64:
+		v.AppendMax("login", 64)
+	case !candidateHandleRegex.MatchString(c.Login):
+		v.Append("login", FieldErrorFormat)
+	}
 	if utf8.RuneCountInString(c.City) > 128 {
 		v.AppendMax("city", 128)
 	}
@@ -537,15 +599,29 @@ func (s CandidateService) isValid(ctx context.Context, c Candidate, isUpdate boo
 		return v
 	}
 
+	s.checkCandidateUniqueness(ctx, &v, c, isUpdate)
+	return v
+}
+
+// checkCandidateUniqueness fills uniqueness errors for handle/login. Pulled out
+// of isValid solely to keep cyclomatic complexity below the linter cap.
+func (s CandidateService) checkCandidateUniqueness(ctx context.Context, v *Validator, c Candidate, isUpdate bool) {
 	other, err := s.repo.OneCandidate(ctx, &db.CandidateSearch{Handle: &c.Handle})
 	if err != nil {
 		v.SetInternalError(err)
-		return v
+		return
 	}
 	if other != nil && (!isUpdate || other.ID != c.ID) {
 		v.Append("handle", FieldErrorUnique)
 	}
-	return v
+	other, err = s.repo.OneCandidate(ctx, &db.CandidateSearch{Login: &c.Login})
+	if err != nil {
+		v.SetInternalError(err)
+		return
+	}
+	if other != nil && (!isUpdate || other.ID != c.ID) {
+		v.Append("login", FieldErrorUnique)
+	}
 }
 
 // ============================================================================

@@ -86,6 +86,14 @@
               comment="ФИО"></column>
       <column name="handle" type="varchar" length="40" nullable="false"
               comment="техлогин ivan.sokolov, уникальный"></column>
+      <column name="login" type="varchar" length="64" nullable="false"
+              comment="логин для входа в систему, уникальный среди не-удалённых"></column>
+      <column name="password" type="varchar" length="64" nullable="false" default="''"
+              comment="bcrypt-хеш пароля"></column>
+      <column name="authKey" type="varchar" length="32" nullable="true"
+              comment="токен сессии (32-символьный random)"></column>
+      <column name="lastActivityAt" type="timestamptz" nullable="true"
+              comment="время последней активности кандидата"></column>
       <column name="city" type="varchar" length="128" nullable="false" default="''"></column>
       <column name="age" type="smallint" nullable="true"></column>
       <column name="bio" type="text" nullable="false" default="''"></column>
@@ -115,12 +123,16 @@
       <fk name="candidates_statusId_fkey" to-table="statuses" on-delete="restrict">
         <column name="statusId" references="statusId"></column>
       </fk>
-      <!-- Partial unique handle: deleted rows free the handle for re-use. -->
+      <!-- Partial unique handle/login: deleted rows free the value for re-use. -->
       <index name="candidates_handle_key" using="btree" unique="true" where="&quot;statusId&quot; &lt;&gt; 3">
         <column name="handle"></column>
       </index>
+      <index name="candidates_login_key" using="btree" unique="true" where="&quot;statusId&quot; &lt;&gt; 3">
+        <column name="login"></column>
+      </index>
       <check name="candidates_age_check"><![CDATA[age IS NULL OR (age >= 14 AND age <= 120)]]></check>
       <check name="candidates_handle_check"><![CDATA[handle ~ '^[a-z0-9.\-_]{2,40}$']]></check>
+      <check name="candidates_login_check"><![CDATA[login ~ '^[a-z0-9.\-_]{2,40}$']]></check>
       <check name="candidates_initials_check"><![CDATA[char_length(initials) BETWEEN 1 AND 3]]></check>
       <check name="candidates_strengths_check"><![CDATA[array_length(strengths, 1) IS NULL OR array_length(strengths, 1) <= 10]]></check>
       <check name="candidates_weaknesses_check"><![CDATA[array_length(weaknesses, 1) IS NULL OR array_length(weaknesses, 1) <= 10]]></check>
@@ -166,6 +178,10 @@
     </index>
     <index name="IX_candidates_statusId" table="candidates" using="btree">
       <column name="statusId"></column>
+    </index>
+    <!-- Speeds up middleware lookup on every protected request. -->
+    <index name="IX_candidates_authKey" table="candidates" using="btree" where="&quot;authKey&quot; IS NOT NULL">
+      <column name="authKey"></column>
     </index>
     <index name="IX_stageScores_candidateId" table="stageScores" using="btree">
       <column name="candidateId"></column>

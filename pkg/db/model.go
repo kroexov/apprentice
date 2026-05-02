@@ -23,7 +23,7 @@ var Columns = struct {
 		ParentFolder string
 	}
 	Candidate struct {
-		ID, Name, Handle, City, Age, Bio, AvatarColor, Initials, AvatarUrl, Strengths, Weaknesses, CurrentStageID, CreatedAt, UpdatedAt, CompletedAt, StatusID string
+		ID, Name, Handle, Login, Password, AuthKey, LastActivityAt, City, Age, Bio, AvatarColor, Initials, AvatarUrl, Strengths, Weaknesses, CurrentStageID, CreatedAt, UpdatedAt, CompletedAt, StatusID string
 
 		CurrentStage string
 	}
@@ -81,13 +81,17 @@ var Columns = struct {
 		ParentFolder: "ParentFolder",
 	},
 	Candidate: struct {
-		ID, Name, Handle, City, Age, Bio, AvatarColor, Initials, AvatarUrl, Strengths, Weaknesses, CurrentStageID, CreatedAt, UpdatedAt, CompletedAt, StatusID string
+		ID, Name, Handle, Login, Password, AuthKey, LastActivityAt, City, Age, Bio, AvatarColor, Initials, AvatarUrl, Strengths, Weaknesses, CurrentStageID, CreatedAt, UpdatedAt, CompletedAt, StatusID string
 
 		CurrentStage string
 	}{
 		ID:             "candidateId",
 		Name:           "name",
 		Handle:         "handle",
+		Login:          "login",
+		Password:       "password",
+		AuthKey:        "authKey",
+		LastActivityAt: "lastActivityAt",
 		City:           "city",
 		Age:            "age",
 		Bio:            "bio",
@@ -239,6 +243,10 @@ type Candidate struct {
 	ID             int        `pg:"candidateId,pk"`
 	Name           string     `pg:"name,use_zero"`
 	Handle         string     `pg:"handle,use_zero"`
+	Login          string     `pg:"login,use_zero"`
+	Password       string     `pg:"password,use_zero"`
+	AuthKey        string     `pg:"authKey,use_zero"`
+	LastActivityAt *time.Time `pg:"lastActivityAt"`
 	City           string     `pg:"city,use_zero"`
 	Age            *int       `pg:"age"`
 	Bio            string     `pg:"bio,use_zero"`

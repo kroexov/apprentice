@@ -11,10 +11,15 @@ import (
 )
 
 var RPC = struct {
+	AuthService      struct{ Login, Register string }
 	CandidateService struct{ Get, GetByID, Add, Update, Delete, Advance, Rate, Rollback, Kanban string }
 	DashboardService struct{ Summary string }
 	StageService     struct{ Get, GetByID, Add, Update, Delete, Reorder string }
 }{
+	AuthService: struct{ Login, Register string }{
+		Login:    "login",
+		Register: "register",
+	},
 	CandidateService: struct{ Get, GetByID, Add, Update, Delete, Advance, Rate, Rollback, Kanban string }{
 		Get:      "get",
 		GetByID:  "getbyid",
@@ -37,6 +42,127 @@ var RPC = struct {
 		Delete:  "delete",
 		Reorder: "reorder",
 	},
+}
+
+func (AuthService) SMD() smd.ServiceInfo {
+	return smd.ServiceInfo{
+		Methods: map[string]smd.Service{
+			"Login": {
+				Description: `Login authenticates an existing admin or candidate and returns a fresh authKey.`,
+				Parameters: []smd.JSONSchema{
+					{
+						Name:        "login",
+						Description: `User login`,
+						Type:        smd.String,
+					},
+					{
+						Name:        "password",
+						Description: `User password`,
+						Type:        smd.String,
+					},
+					{
+						Name:        "userType",
+						Description: `User type ("admin" or "user")`,
+						Type:        smd.String,
+					},
+				},
+				Returns: smd.JSONSchema{
+					Description: `User authentication key`,
+					Type:        smd.String,
+				},
+				Errors: map[int]string{
+					400: "Validation Error",
+					500: "Internal Error",
+				},
+			},
+			"Register": {
+				Description: `Register creates a new candidate and returns a fresh authKey. Only
+userType="user" is accepted — admin self-registration is intentionally not
+available over RPC. Admins are seeded via init.sql or created by another
+admin through CandidateService.Add.`,
+				Parameters: []smd.JSONSchema{
+					{
+						Name:        "login",
+						Description: `User login`,
+						Type:        smd.String,
+					},
+					{
+						Name:        "password",
+						Description: `User password`,
+						Type:        smd.String,
+					},
+					{
+						Name:        "userType",
+						Description: `User type ("user" only)`,
+						Type:        smd.String,
+					},
+				},
+				Returns: smd.JSONSchema{
+					Description: `User authentication key`,
+					Type:        smd.String,
+				},
+				Errors: map[int]string{
+					400: "Validation Error",
+					500: "Internal Error",
+				},
+			},
+		},
+	}
+}
+
+// Invoke is as generated code from zenrpc cmd
+func (s AuthService) Invoke(ctx context.Context, method string, params json.RawMessage) zenrpc.Response {
+	resp := zenrpc.Response{}
+	var err error
+
+	switch method {
+	case RPC.AuthService.Login:
+		var args = struct {
+			Login    string `json:"login"`
+			Password string `json:"password"`
+			UserType string `json:"userType"`
+		}{}
+
+		if zenrpc.IsArray(params) {
+			if params, err = zenrpc.ConvertToObject([]string{"login", "password", "userType"}, params); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &args); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		resp.Set(s.Login(ctx, args.Login, args.Password, args.UserType))
+
+	case RPC.AuthService.Register:
+		var args = struct {
+			Login    string `json:"login"`
+			Password string `json:"password"`
+			UserType string `json:"userType"`
+		}{}
+
+		if zenrpc.IsArray(params) {
+			if params, err = zenrpc.ConvertToObject([]string{"login", "password", "userType"}, params); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &args); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		resp.Set(s.Register(ctx, args.Login, args.Password, args.UserType))
+
+	default:
+		resp = zenrpc.NewResponseError(nil, zenrpc.MethodNotFound, "", nil)
+	}
+
+	return resp
 }
 
 func (CandidateService) SMD() smd.ServiceInfo {
@@ -362,7 +488,10 @@ func (CandidateService) SMD() smd.ServiceInfo {
 				},
 			},
 			"Add": {
-				Description: `Add creates a new candidate.`,
+				Description: `Add creates a new candidate and returns it together with a freshly generated
+one-time password. This is the ONLY response that ever carries a password —
+Get/GetByID/Update strip it. The caller is expected to hand the password to
+the candidate once and not store it.`,
 				Parameters: []smd.JSONSchema{
 					{
 						Name:        "candidate",
@@ -380,6 +509,10 @@ func (CandidateService) SMD() smd.ServiceInfo {
 							},
 							{
 								Name: "handle",
+								Type: smd.String,
+							},
+							{
+								Name: "login",
 								Type: smd.String,
 							},
 							{
@@ -443,10 +576,10 @@ func (CandidateService) SMD() smd.ServiceInfo {
 					},
 				},
 				Returns: smd.JSONSchema{
-					Description: `Candidate`,
+					Description: `CandidateWithPassword`,
 					Optional:    true,
 					Type:        smd.Object,
-					TypeName:    "Candidate",
+					TypeName:    "CandidateWithPassword",
 					Properties: smd.PropertyList{
 						{
 							Name: "id",
@@ -458,6 +591,10 @@ func (CandidateService) SMD() smd.ServiceInfo {
 						},
 						{
 							Name: "handle",
+							Type: smd.String,
+						},
+						{
+							Name: "login",
 							Type: smd.String,
 						},
 						{
@@ -517,6 +654,10 @@ func (CandidateService) SMD() smd.ServiceInfo {
 							Optional: true,
 							Type:     smd.String,
 						},
+						{
+							Name: "password",
+							Type: smd.String,
+						},
 					},
 				},
 				Errors: map[int]string{
@@ -543,6 +684,10 @@ func (CandidateService) SMD() smd.ServiceInfo {
 							},
 							{
 								Name: "handle",
+								Type: smd.String,
+							},
+							{
+								Name: "login",
 								Type: smd.String,
 							},
 							{
@@ -680,6 +825,10 @@ If current stage is the last, completedAt is set instead.`,
 								},
 								{
 									Name: "handle",
+									Type: smd.String,
+								},
+								{
+									Name: "login",
 									Type: smd.String,
 								},
 								{
@@ -846,6 +995,10 @@ If the candidate was completed, completedAt is cleared.`,
 						},
 						{
 							Name: "handle",
+							Type: smd.String,
+						},
+						{
+							Name: "login",
 							Type: smd.String,
 						},
 						{

@@ -27,6 +27,9 @@ CREATE INDEX "IX_FK_users_statusId_users" ON "users" USING BTREE (
 	"statusId"
 );
 
+-- Partial index on authKey for the RPC/VT auth middleware lookup.
+CREATE INDEX "IX_users_authKey" ON "users" ("authKey") WHERE "authKey" IS NOT NULL;
+
 
 CREATE TABLE "vfsFiles" (
 	"fileId" SERIAL NOT NULL,
@@ -158,6 +161,10 @@ CREATE TABLE "candidates" (
 	"candidateId" SERIAL NOT NULL,
 	"name" varchar(80) NOT NULL,
 	"handle" varchar(40) NOT NULL,
+	"login" varchar(64) NOT NULL,
+	"password" varchar(64) NOT NULL DEFAULT '',
+	"authKey" varchar(32),
+	"lastActivityAt" timestamp with time zone,
 	"city" varchar(128) NOT NULL DEFAULT '',
 	"age" int2,
 	"bio" text NOT NULL DEFAULT '',
@@ -174,13 +181,18 @@ CREATE TABLE "candidates" (
 	CONSTRAINT "candidates_pkey" PRIMARY KEY ("candidateId"),
 	CONSTRAINT "candidates_age_check" CHECK ("age" IS NULL OR ("age" >= 14 AND "age" <= 120)),
 	CONSTRAINT "candidates_handle_check" CHECK ("handle" ~ '^[a-z0-9.\-_]{2,40}$'),
+	CONSTRAINT "candidates_login_check" CHECK ("login" ~ '^[a-z0-9.\-_]{2,40}$'),
 	CONSTRAINT "candidates_initials_check" CHECK (char_length("initials") BETWEEN 1 AND 3),
 	CONSTRAINT "candidates_strengths_check" CHECK (array_length("strengths", 1) IS NULL OR array_length("strengths", 1) <= 10),
 	CONSTRAINT "candidates_weaknesses_check" CHECK (array_length("weaknesses", 1) IS NULL OR array_length("weaknesses", 1) <= 10)
 );
 
--- Partial unique on handle: soft-deleted rows release the handle for re-use.
+-- Partial unique on handle/login: soft-deleted rows release values for re-use.
 CREATE UNIQUE INDEX "candidates_handle_key" ON "candidates" ("handle") WHERE "statusId" <> 3;
+CREATE UNIQUE INDEX "candidates_login_key" ON "candidates" ("login") WHERE "statusId" <> 3;
+-- Partial index on authKey: speeds up middleware lookup on every protected
+-- request. NULL keys skipped so the index stays small.
+CREATE INDEX "IX_candidates_authKey" ON "candidates" ("authKey") WHERE "authKey" IS NOT NULL;
 CREATE INDEX "IX_candidates_currentStageId" ON "candidates" USING BTREE ("currentStageId");
 CREATE INDEX "IX_candidates_statusId" ON "candidates" USING BTREE ("statusId");
 

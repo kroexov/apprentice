@@ -19,6 +19,7 @@ type rpcFixtures struct {
 	candidate *CandidateService
 	stage     *StageService
 	dashboard *DashboardService
+	auth      *AuthService
 }
 
 func newRPCFixtures(t *testing.T) rpcFixtures {
@@ -30,11 +31,13 @@ func newRPCFixtures(t *testing.T) rpcFixtures {
 		candidate: NewCandidateService(dbo, logger),
 		stage:     NewStageService(dbo, logger),
 		dashboard: NewDashboardService(dbo, logger),
+		auth:      NewAuthService(dbo, logger),
 	}
 }
 
 // resetApprenticeDB wipes apprentice tables and reseeds two stages so each
-// test gets a small, fully-controlled topology.
+// test gets a small, fully-controlled topology. Also clears non-admin users so
+// AuthService Register tests start from a known state.
 func resetApprenticeDB(t *testing.T, dbo db.DB) {
 	t.Helper()
 	ctx := t.Context()
@@ -44,6 +47,7 @@ func resetApprenticeDB(t *testing.T, dbo db.DB) {
 		`ALTER SEQUENCE "candidates_candidateId_seq" RESTART WITH 1`,
 		`DELETE FROM "stages"`,
 		`ALTER SEQUENCE "stages_stageId_seq" RESTART WITH 1`,
+		`DELETE FROM "users" WHERE login <> 'admin'`,
 	}
 	for _, s := range stmts {
 		if _, err := dbo.ExecContext(ctx, s); err != nil {
@@ -73,11 +77,41 @@ func makeStages(t *testing.T, ctx context.Context, srv *StageService, n int) []S
 	return out
 }
 
+// testAdminPassword is the plaintext password seedAdmin assigns to every
+// fixture admin. Tests that need to exercise login pass this value.
+const testAdminPassword = "passw0rd!"
+
+// seedAdmin inserts an enabled admin User directly via the repo and logs them
+// in to obtain an authKey usable by the middleware. Returns the authKey for
+// test cases that hit protected RPC methods.
+func seedAdmin(t *testing.T, ctx context.Context, dbo db.DB, login string) string {
+	t.Helper()
+	hash, err := passwordHash(testAdminPassword)
+	if err != nil {
+		t.Fatalf("hash admin pwd: %v", err)
+	}
+	commonRepo := db.NewCommonRepo(dbo)
+	u, err := commonRepo.AddUser(ctx, &db.User{
+		Login:    login,
+		Password: hash,
+		StatusID: db.StatusEnabled,
+	})
+	if err != nil {
+		t.Fatalf("seed admin: %v", err)
+	}
+	authKey := generateAuthKey()
+	if _, err := commonRepo.AuthenticateUser(ctx, u, authKey); err != nil {
+		t.Fatalf("authenticate admin: %v", err)
+	}
+	return authKey
+}
+
 func makeCandidate(t *testing.T, ctx context.Context, srv *CandidateService, handle string, stageID int) *Candidate {
 	t.Helper()
 	c := Candidate{
 		Name:           "Иван " + handle,
 		Handle:         handle,
+		Login:          handle,
 		Initials:       "ИИ",
 		AvatarColor:    "#fff",
 		CurrentStageID: stageID,
@@ -86,7 +120,7 @@ func makeCandidate(t *testing.T, ctx context.Context, srv *CandidateService, han
 	if err != nil {
 		t.Fatalf("seed candidate %s: %v", handle, err)
 	}
-	return created
+	return &created.Candidate
 }
 
 // =============================================================================
@@ -144,7 +178,7 @@ func TestDB_StageService_CRUD(t *testing.T) {
 		})
 
 		Convey("Update: 404 for unknown id", func() {
-			_, err := f.stage.Update(ctx, Stage{ID: 999, Alias: "x", Order: 1, Title: "t", ShortTitle: "s", MaxScore: 10})
+			_, err := f.stage.Update(ctx, Stage{ID: 999, Alias: "xy", Order: 1, Title: "t", ShortTitle: "s", MaxScore: 10})
 			So(err, ShouldEqual, ErrStageNotFound)
 		})
 
@@ -244,7 +278,7 @@ func TestDB_CandidateService_CRUD(t *testing.T) {
 
 		Convey("Add: rejects unknown stage", func() {
 			_, err := f.candidate.Add(ctx, Candidate{
-				Name: "X", Handle: "x.x", Initials: "XX", CurrentStageID: 999,
+				Name: "X", Handle: "x.x", Login: "x.x", Initials: "XX", CurrentStageID: 999,
 			})
 			So(err, ShouldEqual, ErrInvalidCurrentStage)
 		})
@@ -252,7 +286,7 @@ func TestDB_CandidateService_CRUD(t *testing.T) {
 		Convey("Add: handle uniqueness", func() {
 			_ = makeCandidate(t, ctx, f.candidate, "ivan.s", stages[0].ID)
 			_, err := f.candidate.Add(ctx, Candidate{
-				Name: "X", Handle: "ivan.s", Initials: "XX", CurrentStageID: stages[0].ID,
+				Name: "X", Handle: "ivan.s", Login: "ivan.s", Initials: "XX", CurrentStageID: stages[0].ID,
 			})
 			So(err, ShouldNotBeNil)
 		})
@@ -286,7 +320,7 @@ func TestDB_CandidateService_CRUD(t *testing.T) {
 
 			// Now the same handle should be re-usable (partial unique honours soft-delete).
 			c2, err := f.candidate.Add(ctx, Candidate{
-				Name: "Ivan B", Handle: "ivan.s", Initials: "ИБ", CurrentStageID: stages[0].ID,
+				Name: "Ivan B", Handle: "ivan.s", Login: "ivan.s", Initials: "ИБ", CurrentStageID: stages[0].ID,
 			})
 			So(err, ShouldBeNil)
 			So(c2.ID, ShouldNotEqual, c.ID)

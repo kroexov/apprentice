@@ -71,6 +71,18 @@ func (c Candidate) Validate() (errors map[string]string, valid bool) {
 		errors[Columns.Candidate.Handle] = ErrMaxLength
 	}
 
+	if utf8.RuneCountInString(c.Login) > 64 {
+		errors[Columns.Candidate.Login] = ErrMaxLength
+	}
+
+	if utf8.RuneCountInString(c.Password) > 64 {
+		errors[Columns.Candidate.Password] = ErrMaxLength
+	}
+
+	if utf8.RuneCountInString(c.AuthKey) > 32 {
+		errors[Columns.Candidate.AuthKey] = ErrMaxLength
+	}
+
 	if utf8.RuneCountInString(c.City) > 128 {
 		errors[Columns.Candidate.City] = ErrMaxLength
 	}

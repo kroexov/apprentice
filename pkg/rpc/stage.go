@@ -116,33 +116,46 @@ func (s StageService) Add(ctx context.Context, stage Stage) (*Stage, error) {
 //zenrpc:400 Validation Error
 //zenrpc:500 Internal Error
 func (s StageService) Update(ctx context.Context, stage Stage) (bool, error) {
-	cur, err := s.repo.StageByID(ctx, stage.ID)
-	if err != nil {
-		return false, InternalError(err)
-	}
-	if cur == nil {
-		return false, ErrStageNotFound
-	}
 	if ve := s.isValid(ctx, stage, true); ve.HasErrors() {
 		return false, ve.Error()
 	}
 
-	cur.Alias = stage.Alias
-	cur.Title = stage.Title
-	cur.ShortTitle = stage.ShortTitle
-	cur.Description = stage.Description
-	cur.MaxScore = stage.MaxScore
+	var ok bool
+	err := s.dbo.RunInTransaction(ctx, func(tx *pg.Tx) error {
+		txRepo := s.repo.WithTransaction(tx)
 
-	ok, err := s.repo.UpdateStage(ctx, cur, db.WithColumns(
-		db.Columns.Stage.Alias,
-		db.Columns.Stage.Title,
-		db.Columns.Stage.ShortTitle,
-		db.Columns.Stage.Description,
-		db.Columns.Stage.MaxScore,
-	))
+		cur, err := txRepo.StageByID(ctx, stage.ID)
+		if err != nil {
+			return err
+		}
+		if cur == nil {
+			return ErrStageNotFound
+		}
+		cur.Alias = stage.Alias
+		cur.Title = stage.Title
+		cur.ShortTitle = stage.ShortTitle
+		cur.Description = stage.Description
+		cur.MaxScore = stage.MaxScore
+
+		ok, err = txRepo.UpdateStage(ctx, cur, db.WithColumns(
+			db.Columns.Stage.Alias,
+			db.Columns.Stage.Title,
+			db.Columns.Stage.ShortTitle,
+			db.Columns.Stage.Description,
+			db.Columns.Stage.MaxScore,
+		))
+		if err != nil {
+			if e := mapStageUniqueErr(err); e != nil {
+				return e
+			}
+			return err
+		}
+		return nil
+	})
 	if err != nil {
-		if e := mapStageUniqueErr(err); e != nil {
-			return false, e
+		var zerr *zenrpc.Error
+		if errors.As(err, &zerr) {
+			return false, zerr
 		}
 		return false, InternalError(err)
 	}
@@ -157,24 +170,34 @@ func (s StageService) Update(ctx context.Context, stage Stage) (bool, error) {
 //zenrpc:400 stage has scores
 //zenrpc:500 Internal Error
 func (s StageService) Delete(ctx context.Context, id int) (bool, error) {
-	cur, err := s.repo.StageByID(ctx, id)
-	if err != nil {
-		return false, InternalError(err)
-	}
-	if cur == nil {
-		return false, ErrStageNotFound
-	}
+	var ok bool
+	err := s.dbo.RunInTransaction(ctx, func(tx *pg.Tx) error {
+		txRepo := s.repo.WithTransaction(tx)
 
-	cnt, err := s.repo.CountStageScores(ctx, &db.StageScoreSearch{StageID: &id})
-	if err != nil {
-		return false, InternalError(err)
-	}
-	if cnt > 0 {
-		return false, ErrStageHasScores
-	}
+		cur, err := txRepo.StageByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		if cur == nil {
+			return ErrStageNotFound
+		}
 
-	ok, err := s.repo.DeleteStage(ctx, id)
+		cnt, err := txRepo.CountStageScores(ctx, &db.StageScoreSearch{StageID: &id})
+		if err != nil {
+			return err
+		}
+		if cnt > 0 {
+			return ErrStageHasScores
+		}
+
+		ok, err = txRepo.DeleteStage(ctx, id)
+		return err
+	})
 	if err != nil {
+		var zerr *zenrpc.Error
+		if errors.As(err, &zerr) {
+			return false, zerr
+		}
 		return false, InternalError(err)
 	}
 	s.Print(ctx, "stage deleted", "stageId", id)

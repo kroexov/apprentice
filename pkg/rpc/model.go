@@ -110,6 +110,7 @@ type Candidate struct {
 	ID             int      `json:"id"`
 	Name           string   `json:"name"`
 	Handle         string   `json:"handle"`
+	Login          string   `json:"login"`
 	City           string   `json:"city"`
 	Age            *int     `json:"age"`
 	Bio            string   `json:"bio"`
@@ -132,6 +133,7 @@ func NewCandidate(d *db.Candidate) *Candidate {
 		ID:             d.ID,
 		Name:           d.Name,
 		Handle:         d.Handle,
+		Login:          d.Login,
 		City:           d.City,
 		Age:            d.Age,
 		Bio:            d.Bio,
@@ -150,6 +152,8 @@ func NewCandidate(d *db.Candidate) *Candidate {
 // ToDB normalises and converts a public Candidate to a db.Candidate. nil
 // Strengths/Weaknesses become empty slices so the column always carries
 // `text[]` instead of NULL — the only normaliser, all callers go through it.
+// Password / AuthKey / LastActivityAt are credential-only fields and are
+// never copied here: they're managed exclusively by AuthService.
 func (c *Candidate) ToDB() *db.Candidate {
 	if c == nil {
 		return nil
@@ -158,6 +162,7 @@ func (c *Candidate) ToDB() *db.Candidate {
 		ID:             c.ID,
 		Name:           c.Name,
 		Handle:         c.Handle,
+		Login:          c.Login,
 		City:           c.City,
 		Age:            c.Age,
 		Bio:            c.Bio,
@@ -254,6 +259,14 @@ func NewScore(d *db.StageScore) *Score {
 type AdvanceResult struct {
 	Candidate *Candidate `json:"candidate"`
 	Score     *Score     `json:"score"`
+}
+
+// CandidateWithPassword carries the freshly generated password back to the
+// caller of CandidateService.Add — the only path where the password is
+// surfaced. Subsequent reads (Get/GetByID/Update responses) never include it.
+type CandidateWithPassword struct {
+	Candidate
+	Password string `json:"password"`
 }
 
 // ============================================================================
