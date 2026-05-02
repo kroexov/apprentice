@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<pgd version="1" pg-version="14" default-schema="public">
+
+  <project name="apprentice" description="Golang Apprentice — программа стажировки: этапы, кандидаты, оценки">
+    <settings>
+      <naming convention="camelCase" tables="plural"></naming>
+      <defaults nullable="true" on-delete="restrict"></defaults>
+    </settings>
+  </project>
+
+  <database name="apisrv"></database>
+
+  <schema name="public">
+
+    <!-- Существующие справочники, объявлены минимально для FK-ссылок -->
+    <table name="statuses">
+      <column name="statusId" type="serial" nullable="false"></column>
+      <column name="title" type="varchar" length="255" nullable="false"></column>
+      <column name="alias" type="varchar" length="64" nullable="false"></column>
+      <pk name="statuses_pkey">
+        <column name="statusId"></column>
+      </pk>
+      <unique name="statuses_alias_key">
+        <column name="alias"></column>
+      </unique>
+    </table>
+
+    <table name="users">
+      <column name="userId" type="serial" nullable="false"></column>
+      <column name="login" type="varchar" length="64" nullable="false"></column>
+      <column name="password" type="varchar" length="64" nullable="false"></column>
+      <column name="authKey" type="varchar" length="32" nullable="true"></column>
+      <column name="createdAt" type="timestamptz" nullable="false" default="now()"></column>
+      <column name="lastActivityAt" type="timestamptz" nullable="true"></column>
+      <column name="statusId" type="integer" nullable="false"></column>
+      <pk name="users_pkey">
+        <column name="userId"></column>
+      </pk>
+      <fk name="users_statusId_fkey" to-table="statuses" on-delete="restrict">
+        <column name="statusId" references="statusId"></column>
+      </fk>
+    </table>
+
+    <!-- ============================================================ -->
+    <!-- Этап программы стажировки                                     -->
+    <!-- ============================================================ -->
+    <table name="stages" comment="Этапы программы — упорядоченный пайплайн">
+      <column name="stageId" type="serial" nullable="false"></column>
+      <column name="alias" type="varchar" length="64" nullable="false"
+              comment="slug-идентификатор: first-project, first-pr и т.п."></column>
+      <column name="order" type="integer" nullable="false"
+              comment="порядковый номер, монотонно возрастает"></column>
+      <column name="title" type="varchar" length="255" nullable="false"
+              comment="полное название"></column>
+      <column name="shortTitle" type="varchar" length="64" nullable="false"
+              comment="краткое название для карточек"></column>
+      <column name="description" type="text" nullable="false" default="''"
+              comment="описание этапа"></column>
+      <column name="maxScore" type="integer" nullable="false" default="10"
+              comment="максимум баллов за этап"></column>
+      <column name="statusId" type="integer" nullable="false" default="1"
+              comment="enabled=1, disabled=2, deleted=3"></column>
+      <pk name="stages_pkey">
+        <column name="stageId"></column>
+      </pk>
+      <fk name="stages_statusId_fkey" to-table="statuses" on-delete="restrict">
+        <column name="statusId" references="statusId"></column>
+      </fk>
+      <check name="stages_maxScore_check"><![CDATA["maxScore" > 0 AND "maxScore" <= 100]]></check>
+      <check name="stages_alias_check"><![CDATA[alias ~ '^[a-z0-9.\-_]{2,64}$']]></check>
+      <!-- Partial unique indexes ignore soft-deleted rows so alias/order are reusable. -->
+      <index name="stages_alias_key" using="btree" unique="true" where="&quot;statusId&quot; &lt;&gt; 3">
+        <column name="alias"></column>
+      </index>
+      <index name="stages_order_key" using="btree" unique="true" where="&quot;statusId&quot; &lt;&gt; 3">
+        <column name="order"></column>
+      </index>
+    </table>
+
+    <!-- ============================================================ -->
+    <!-- Кандидат                                                      -->
+    <!-- ============================================================ -->
+    <table name="candidates" comment="Кандидаты программы">
+      <column name="candidateId" type="serial" nullable="false"></column>
+      <column name="name" type="varchar" length="80" nullable="false"
+              comment="ФИО"></column>
+      <column name="handle" type="varchar" length="40" nullable="false"
+              comment="техлогин ivan.sokolov, уникальный"></column>
+      <column name="city" type="varchar" length="128" nullable="false" default="''"></column>
+      <column name="age" type="smallint" nullable="true"></column>
+      <column name="bio" type="text" nullable="false" default="''"></column>
+      <column name="avatarColor" type="varchar" length="16" nullable="false" default="''"
+              comment="hex или имя цвета фона аватарки"></column>
+      <column name="initials" type="varchar" length="3" nullable="false" default="''"
+              comment="1-3 символа для аватарки"></column>
+      <column name="avatarUrl" type="text" nullable="true"
+              comment="опциональная картинка"></column>
+      <column name="strengths" type="text[]" nullable="false" default="ARRAY[]::text[]"
+              comment="теги сильных сторон"></column>
+      <column name="weaknesses" type="text[]" nullable="false" default="ARRAY[]::text[]"
+              comment="теги зон роста"></column>
+      <column name="currentStageId" type="integer" nullable="false"
+              comment="текущий этап кандидата"></column>
+      <column name="createdAt" type="timestamptz" nullable="false" default="now()"></column>
+      <column name="updatedAt" type="timestamptz" nullable="false" default="now()"></column>
+      <column name="completedAt" type="timestamptz" nullable="true"
+              comment="проставлен, когда у кандидата есть оценка по всем этапам"></column>
+      <column name="statusId" type="integer" nullable="false" default="1"></column>
+      <pk name="candidates_pkey">
+        <column name="candidateId"></column>
+      </pk>
+      <fk name="candidates_currentStageId_fkey" to-table="stages" on-delete="restrict">
+        <column name="currentStageId" references="stageId"></column>
+      </fk>
+      <fk name="candidates_statusId_fkey" to-table="statuses" on-delete="restrict">
+        <column name="statusId" references="statusId"></column>
+      </fk>
+      <!-- Partial unique handle: deleted rows free the handle for re-use. -->
+      <index name="candidates_handle_key" using="btree" unique="true" where="&quot;statusId&quot; &lt;&gt; 3">
+        <column name="handle"></column>
+      </index>
+      <check name="candidates_age_check"><![CDATA[age IS NULL OR (age >= 14 AND age <= 120)]]></check>
+      <check name="candidates_handle_check"><![CDATA[handle ~ '^[a-z0-9.\-_]{2,40}$']]></check>
+      <check name="candidates_initials_check"><![CDATA[char_length(initials) BETWEEN 1 AND 3]]></check>
+      <check name="candidates_strengths_check"><![CDATA[array_length(strengths, 1) IS NULL OR array_length(strengths, 1) <= 10]]></check>
+      <check name="candidates_weaknesses_check"><![CDATA[array_length(weaknesses, 1) IS NULL OR array_length(weaknesses, 1) <= 10]]></check>
+    </table>
+
+    <!-- ============================================================ -->
+    <!-- Оценка кандидата за пройденный этап                           -->
+    <!-- ============================================================ -->
+    <table name="stageScores" comment="Оценки пройденных этапов">
+      <column name="scoreId" type="serial" nullable="false"></column>
+      <column name="candidateId" type="integer" nullable="false"></column>
+      <column name="stageId" type="integer" nullable="false"></column>
+      <column name="score" type="smallint" nullable="false"
+              comment="балл 1..stages.maxScore"></column>
+      <column name="scoredAt" type="timestamptz" nullable="false" default="now()"></column>
+      <column name="scoredBy" type="integer" nullable="true"
+              comment="users.userId — кто поставил оценку (на вырост)"></column>
+      <pk name="stageScores_pkey">
+        <column name="scoreId"></column>
+      </pk>
+      <unique name="stageScores_candidate_stage_key">
+        <column name="candidateId"></column>
+        <column name="stageId"></column>
+      </unique>
+      <fk name="stageScores_candidateId_fkey" to-table="candidates" on-delete="cascade">
+        <column name="candidateId" references="candidateId"></column>
+      </fk>
+      <fk name="stageScores_stageId_fkey" to-table="stages" on-delete="restrict">
+        <column name="stageId" references="stageId"></column>
+      </fk>
+      <fk name="stageScores_scoredBy_fkey" to-table="users" on-delete="set null">
+        <column name="scoredBy" references="userId"></column>
+      </fk>
+      <check name="stageScores_score_check"><![CDATA[score >= 1 AND score <= 100]]></check>
+    </table>
+
+    <!-- Индексы (на уровне схемы, не внутри таблиц) -->
+    <index name="IX_stages_order" table="stages" using="btree">
+      <column name="order" order="asc"></column>
+    </index>
+    <index name="IX_candidates_currentStageId" table="candidates" using="btree">
+      <column name="currentStageId"></column>
+    </index>
+    <index name="IX_candidates_statusId" table="candidates" using="btree">
+      <column name="statusId"></column>
+    </index>
+    <index name="IX_stageScores_candidateId" table="stageScores" using="btree">
+      <column name="candidateId"></column>
+    </index>
+    <index name="IX_stageScores_stageId" table="stageScores" using="btree">
+      <column name="stageId"></column>
+    </index>
+
+  </schema>
+
+</pgd>

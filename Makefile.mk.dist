@@ -2,9 +2,9 @@
 NAME := apisrv
 
 # local database connection settings
-TEST_PGDATABASE ?= test-apisrv
+TEST_PGDATABASE ?= test-apprentice
 
-PGDATABASE ?= apisrv
+PGDATABASE ?= apprentice
 PGHOST ?= localhost
 PGPORT ?= 5432
 PGUSER ?= postgres

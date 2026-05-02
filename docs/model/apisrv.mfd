@@ -3,10 +3,12 @@
     <PackageNames>
         <string>common</string>
         <string>vfs</string>
+        <string>apprentice</string>
     </PackageNames>
     <TableMapping>
         <common>users</common>
         <vfs>vfsFiles,vfsFolders</vfs>
+        <apprentice>stages,candidates,stageScores</apprentice>
     </TableMapping>
     <Languages>
         <string>ru</string>

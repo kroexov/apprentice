@@ -1,0 +1,66 @@
+<Package xmlns:xsi="" xmlns:xsd="">
+    <Name>apprentice</Name>
+    <Entities>
+        <Entity Name="Candidate" Namespace="apprentice" Table="candidates">
+            <Attributes>
+                <Attribute Name="ID" DBName="candidateId" DBType="int4" GoType="int" PK="true" Nullable="Yes" Addable="true" Updatable="false" Min="0" Max="0" HasDefault="true"></Attribute>
+                <Attribute Name="Name" DBName="name" DBType="varchar" GoType="string" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="80"></Attribute>
+                <Attribute Name="Handle" DBName="handle" DBType="varchar" GoType="string" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="40"></Attribute>
+                <Attribute Name="City" DBName="city" DBType="varchar" GoType="string" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="128" HasDefault="true"></Attribute>
+                <Attribute Name="Age" DBName="age" DBType="int2" GoType="*int" PK="false" Nullable="Yes" Addable="true" Updatable="true" Min="0" Max="0"></Attribute>
+                <Attribute Name="Bio" DBName="bio" DBType="text" GoType="string" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="0" HasDefault="true"></Attribute>
+                <Attribute Name="AvatarColor" DBName="avatarColor" DBType="varchar" GoType="string" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="16" HasDefault="true"></Attribute>
+                <Attribute Name="Initials" DBName="initials" DBType="varchar" GoType="string" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="3" HasDefault="true"></Attribute>
+                <Attribute Name="AvatarUrl" DBName="avatarUrl" DBType="text" GoType="*string" PK="false" Nullable="Yes" Addable="true" Updatable="true" Min="0" Max="0"></Attribute>
+                <Attribute Name="Strengths" DBName="strengths" IsArray="true" DBType="text" GoType="[]string" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="0" HasDefault="true"></Attribute>
+                <Attribute Name="Weaknesses" DBName="weaknesses" IsArray="true" DBType="text" GoType="[]string" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="0" HasDefault="true"></Attribute>
+                <Attribute Name="CurrentStageID" DBName="currentStageId" DBType="int4" GoType="int" PK="false" FK="Stage" Nullable="No" Addable="true" Updatable="true" Min="0" Max="0"></Attribute>
+                <Attribute Name="CreatedAt" DBName="createdAt" DBType="timestamptz" GoType="time.Time" PK="false" Nullable="No" Addable="false" Updatable="false" Min="0" Max="0" HasDefault="true"></Attribute>
+                <Attribute Name="UpdatedAt" DBName="updatedAt" DBType="timestamptz" GoType="time.Time" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="0" HasDefault="true"></Attribute>
+                <Attribute Name="CompletedAt" DBName="completedAt" DBType="timestamptz" GoType="*time.Time" PK="false" Nullable="Yes" Addable="true" Updatable="true" Min="0" Max="0"></Attribute>
+                <Attribute Name="StatusID" DBName="statusId" DBType="int4" GoType="int" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="0"></Attribute>
+            </Attributes>
+            <Searches>
+                <Search Name="IDs" AttrName="ID" SearchType="SEARCHTYPE_ARRAY"></Search>
+                <Search Name="NameILike" AttrName="Name" SearchType="SEARCHTYPE_ILIKE"></Search>
+                <Search Name="HandleILike" AttrName="Handle" SearchType="SEARCHTYPE_ILIKE"></Search>
+                <Search Name="CityILike" AttrName="City" SearchType="SEARCHTYPE_ILIKE"></Search>
+                <Search Name="BioILike" AttrName="Bio" SearchType="SEARCHTYPE_ILIKE"></Search>
+                <Search Name="AvatarColorILike" AttrName="AvatarColor" SearchType="SEARCHTYPE_ILIKE"></Search>
+                <Search Name="InitialsILike" AttrName="Initials" SearchType="SEARCHTYPE_ILIKE"></Search>
+                <Search Name="AvatarUrlILike" AttrName="AvatarUrl" SearchType="SEARCHTYPE_ILIKE"></Search>
+            </Searches>
+        </Entity>
+        <Entity Name="StageScore" Namespace="apprentice" Table="stageScores">
+            <Attributes>
+                <Attribute Name="ID" DBName="scoreId" DBType="int4" GoType="int" PK="true" Nullable="Yes" Addable="true" Updatable="false" Min="0" Max="0" HasDefault="true"></Attribute>
+                <Attribute Name="CandidateID" DBName="candidateId" DBType="int4" GoType="int" PK="false" FK="Candidate" Nullable="No" Addable="true" Updatable="true" Min="0" Max="0"></Attribute>
+                <Attribute Name="StageID" DBName="stageId" DBType="int4" GoType="int" PK="false" FK="Stage" Nullable="No" Addable="true" Updatable="true" Min="0" Max="0"></Attribute>
+                <Attribute Name="Score" DBName="score" DBType="int2" GoType="int" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="0"></Attribute>
+                <Attribute Name="ScoredAt" DBName="scoredAt" DBType="timestamptz" GoType="time.Time" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="0" HasDefault="true"></Attribute>
+            </Attributes>
+            <Searches>
+                <Search Name="IDs" AttrName="ID" SearchType="SEARCHTYPE_ARRAY"></Search>
+            </Searches>
+        </Entity>
+        <Entity Name="Stage" Namespace="apprentice" Table="stages">
+            <Attributes>
+                <Attribute Name="ID" DBName="stageId" DBType="int4" GoType="int" PK="true" Nullable="Yes" Addable="true" Updatable="false" Min="0" Max="0" HasDefault="true"></Attribute>
+                <Attribute Name="Alias" DBName="alias" DBType="varchar" GoType="string" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="64"></Attribute>
+                <Attribute Name="Order" DBName="order" DBType="int4" GoType="int" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="0"></Attribute>
+                <Attribute Name="Title" DBName="title" DBType="varchar" GoType="string" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="255"></Attribute>
+                <Attribute Name="ShortTitle" DBName="shortTitle" DBType="varchar" GoType="string" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="64"></Attribute>
+                <Attribute Name="Description" DBName="description" DBType="text" GoType="string" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="0" HasDefault="true"></Attribute>
+                <Attribute Name="MaxScore" DBName="maxScore" DBType="int4" GoType="int" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="0" HasDefault="true"></Attribute>
+                <Attribute Name="StatusID" DBName="statusId" DBType="int4" GoType="int" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="0"></Attribute>
+            </Attributes>
+            <Searches>
+                <Search Name="IDs" AttrName="ID" SearchType="SEARCHTYPE_ARRAY"></Search>
+                <Search Name="NotID" AttrName="ID" SearchType="SEARCHTYPE_NOT_EQUALS"></Search>
+                <Search Name="TitleILike" AttrName="Title" SearchType="SEARCHTYPE_ILIKE"></Search>
+                <Search Name="ShortTitleILike" AttrName="ShortTitle" SearchType="SEARCHTYPE_ILIKE"></Search>
+                <Search Name="DescriptionILike" AttrName="Description" SearchType="SEARCHTYPE_ILIKE"></Search>
+            </Searches>
+        </Entity>
+    </Entities>
+</Package>

@@ -128,4 +128,94 @@ ALTER TABLE "vfsFolders" ADD CONSTRAINT "vfsFolders_statusId_fkey" FOREIGN KEY (
 	ON UPDATE RESTRICT
 	NOT DEFERRABLE;
 
+-- =============================================================================
+-- Apprentice domain: stages, candidates, stageScores
+-- =============================================================================
+
+CREATE TABLE "stages" (
+	"stageId" SERIAL NOT NULL,
+	"alias" varchar(64) NOT NULL,
+	"order" int4 NOT NULL,
+	"title" varchar(255) NOT NULL,
+	"shortTitle" varchar(64) NOT NULL,
+	"description" text NOT NULL DEFAULT '',
+	"maxScore" int4 NOT NULL DEFAULT 10,
+	"statusId" int4 NOT NULL DEFAULT 1,
+	CONSTRAINT "stages_pkey" PRIMARY KEY ("stageId"),
+	CONSTRAINT "stages_maxScore_check" CHECK ("maxScore" > 0 AND "maxScore" <= 100),
+	CONSTRAINT "stages_alias_check" CHECK ("alias" ~ '^[a-z0-9.\-_]{2,64}$')
+);
+
+-- Partial unique indexes ignore soft-deleted rows (statusId = 3) so alias/order
+-- become reusable after Delete. Reorder uses a single transaction with negative
+-- offsets to dodge the alive-rows uniqueness while shuffling, which is why the
+-- ">0" CHECK is intentionally absent.
+CREATE UNIQUE INDEX "stages_alias_key" ON "stages" ("alias") WHERE "statusId" <> 3;
+CREATE UNIQUE INDEX "stages_order_key" ON "stages" ("order") WHERE "statusId" <> 3;
+CREATE INDEX "IX_stages_order" ON "stages" USING BTREE ("order" ASC);
+
+CREATE TABLE "candidates" (
+	"candidateId" SERIAL NOT NULL,
+	"name" varchar(80) NOT NULL,
+	"handle" varchar(40) NOT NULL,
+	"city" varchar(128) NOT NULL DEFAULT '',
+	"age" int2,
+	"bio" text NOT NULL DEFAULT '',
+	"avatarColor" varchar(16) NOT NULL DEFAULT '',
+	"initials" varchar(3) NOT NULL DEFAULT '',
+	"avatarUrl" text,
+	"strengths" text[] NOT NULL DEFAULT ARRAY[]::text[],
+	"weaknesses" text[] NOT NULL DEFAULT ARRAY[]::text[],
+	"currentStageId" int4 NOT NULL,
+	"createdAt" timestamp with time zone NOT NULL DEFAULT now(),
+	"updatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+	"completedAt" timestamp with time zone,
+	"statusId" int4 NOT NULL DEFAULT 1,
+	CONSTRAINT "candidates_pkey" PRIMARY KEY ("candidateId"),
+	CONSTRAINT "candidates_age_check" CHECK ("age" IS NULL OR ("age" >= 14 AND "age" <= 120)),
+	CONSTRAINT "candidates_handle_check" CHECK ("handle" ~ '^[a-z0-9.\-_]{2,40}$'),
+	CONSTRAINT "candidates_initials_check" CHECK (char_length("initials") BETWEEN 1 AND 3),
+	CONSTRAINT "candidates_strengths_check" CHECK (array_length("strengths", 1) IS NULL OR array_length("strengths", 1) <= 10),
+	CONSTRAINT "candidates_weaknesses_check" CHECK (array_length("weaknesses", 1) IS NULL OR array_length("weaknesses", 1) <= 10)
+);
+
+-- Partial unique on handle: soft-deleted rows release the handle for re-use.
+CREATE UNIQUE INDEX "candidates_handle_key" ON "candidates" ("handle") WHERE "statusId" <> 3;
+CREATE INDEX "IX_candidates_currentStageId" ON "candidates" USING BTREE ("currentStageId");
+CREATE INDEX "IX_candidates_statusId" ON "candidates" USING BTREE ("statusId");
+
+CREATE TABLE "stageScores" (
+	"scoreId" SERIAL NOT NULL,
+	"candidateId" int4 NOT NULL,
+	"stageId" int4 NOT NULL,
+	"score" int2 NOT NULL,
+	"scoredAt" timestamp with time zone NOT NULL DEFAULT now(),
+	CONSTRAINT "stageScores_pkey" PRIMARY KEY ("scoreId"),
+	CONSTRAINT "stageScores_candidate_stage_key" UNIQUE ("candidateId", "stageId"),
+	CONSTRAINT "stageScores_score_check" CHECK ("score" >= 1 AND "score" <= 100)
+);
+
+CREATE INDEX "IX_stageScores_candidateId" ON "stageScores" USING BTREE ("candidateId");
+CREATE INDEX "IX_stageScores_stageId" ON "stageScores" USING BTREE ("stageId");
+
+ALTER TABLE "stages" ADD CONSTRAINT "stages_statusId_fkey" FOREIGN KEY ("statusId")
+	REFERENCES "statuses"("statusId")
+	MATCH SIMPLE ON DELETE RESTRICT ON UPDATE RESTRICT NOT DEFERRABLE;
+
+ALTER TABLE "candidates" ADD CONSTRAINT "candidates_currentStageId_fkey" FOREIGN KEY ("currentStageId")
+	REFERENCES "stages"("stageId")
+	MATCH SIMPLE ON DELETE RESTRICT ON UPDATE RESTRICT NOT DEFERRABLE;
+
+ALTER TABLE "candidates" ADD CONSTRAINT "candidates_statusId_fkey" FOREIGN KEY ("statusId")
+	REFERENCES "statuses"("statusId")
+	MATCH SIMPLE ON DELETE RESTRICT ON UPDATE RESTRICT NOT DEFERRABLE;
+
+ALTER TABLE "stageScores" ADD CONSTRAINT "stageScores_candidateId_fkey" FOREIGN KEY ("candidateId")
+	REFERENCES "candidates"("candidateId")
+	MATCH SIMPLE ON DELETE CASCADE ON UPDATE RESTRICT NOT DEFERRABLE;
+
+ALTER TABLE "stageScores" ADD CONSTRAINT "stageScores_stageId_fkey" FOREIGN KEY ("stageId")
+	REFERENCES "stages"("stageId")
+	MATCH SIMPLE ON DELETE RESTRICT ON UPDATE RESTRICT NOT DEFERRABLE;
+
 

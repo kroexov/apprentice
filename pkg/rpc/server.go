@@ -10,10 +10,15 @@ import (
 	"github.com/vmkteam/zenrpc/v2"
 )
 
-var (
-	ErrNotImplemented = zenrpc.NewStringError(http.StatusInternalServerError, "not implemented")
-	ErrInternal       = zenrpc.NewStringError(http.StatusInternalServerError, "internal error")
+const (
+	NSStage     = "stage"
+	NSCandidate = "candidate"
+	NSDashboard = "dashboard"
 )
+
+func InternalError(err error) *zenrpc.Error {
+	return zenrpc.NewError(http.StatusInternalServerError, err)
+}
 
 var allowDebugFn = func() zm.AllowDebugFunc {
 	return func(req *http.Request) bool {
@@ -47,13 +52,10 @@ func New(dbo db.DB, logger embedlog.Logger, isDevel bool) *zenrpc.Server {
 
 	// services
 	rpc.RegisterAll(map[string]zenrpc.Invoker{
-		// "sample": NewSampleService(db, logger),
+		NSStage:     NewStageService(dbo, logger),
+		NSCandidate: NewCandidateService(dbo, logger),
+		NSDashboard: NewDashboardService(dbo, logger),
 	})
 
 	return rpc
-}
-
-//nolint:unused
-func newInternalError(err error) *zenrpc.Error {
-	return zenrpc.NewError(http.StatusInternalServerError, err)
 }

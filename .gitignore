@@ -4,3 +4,10 @@ cfg/local.toml
 coverage.txt
 coverage.xml
 Makefile.mk
+
+# build artifacts
+/apisrv
+
+# generated docs (regenerate via `make generate` / `make type-script-client`)
+docs/api.ts
+docs/RPC.md

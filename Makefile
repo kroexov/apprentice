@@ -56,10 +56,10 @@ run:
 	@go run $(GOFLAGS) $(MAIN) -config=cfg/local.toml -dev
 
 generate:
-	#@go generate ./pkg/rpc
+	@go generate ./pkg/rpc
 	@go generate ./pkg/vt
 
-test:
+test: db-test
 	@echo "Running tests"
 	@PGDATABASE=$(TEST_PGDATABASE) go test -count=1 $(GOFLAGS) -coverprofile=coverage.txt -covermode count $(PKG)
 
@@ -80,14 +80,14 @@ db:
 db-test:
 	@$(MAKE) --no-print-directory db PGDATABASE=${TEST_PGDATABASE}
 
-NS := "NONE"
+NS := "apprentice"
 
 mfd-xml:
-	@mfd-generator xml -c "postgres://$(PGUSER):$(PGPASSWORD)@$(PGHOST):$(PGPORT)/$(PGDATABASE)?sslmode=disable" -m ./docs/model/$(NAME).mfd
+	@mfd-generator xml -c "postgres://$(PGUSER):$(PGPASSWORD)@$(PGHOST):$(PGPORT)/$(PGDATABASE)?sslmode=disable" -m ./docs/model/apprentice.mfd -t public.*
 mfd-model:
-	@mfd-generator model -m ./docs/model/$(NAME).mfd -p db -o ./pkg/db
+	@mfd-generator model -m ./docs/model/apprentice.mfd -p db -o ./pkg/db
 mfd-repo: --check-ns
-	@mfd-generator repo -m ./docs/model/$(NAME).mfd -p db -o ./pkg/db -n $(NS)
+	@mfd-generator repo -m ./docs/model/apprentice.mfd -p db -o ./pkg/db -n $(NS)
 mfd-db-test:
 	@mfd-generator dbtest -m docs/model/$(NAME).mfd -o ./pkg/db/test -x $(NAME)/pkg/db
 mfd-vt-xml:

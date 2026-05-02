@@ -51,7 +51,7 @@ func setup() (*pg.DB, error) {
 	var (
 		pghost = getenv("PGHOST", "localhost")
 		pgport = getenv("PGPORT", "5432")
-		pgdb   = getenv("PGDATABASE", "test-apisrv")
+		pgdb   = getenv("PGDATABASE", "test-apprentice")
 		pguser = getenv("PGUSER", "postgres")
 		pgpass = getenv("PGPASSWORD", "postgres")
 	)
