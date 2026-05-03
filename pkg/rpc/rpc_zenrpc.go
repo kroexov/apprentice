@@ -1266,7 +1266,9 @@ func (CandidateService) SMD() smd.ServiceInfo {
 				},
 			},
 			"SetAvatarURL": {
-				Description: `SetAvatarURL attaches or detaches avatarUrl on a Candidate (admin or self-candidate).`,
+				Description: `SetAvatarURL attaches or detaches avatarUrl on a Candidate (admin or self-candidate).
+avatarUrl param name (vs avatarURL) is intentional: zenrpc reuses it as the
+JSON tag, and Candidate.AvatarURL ships json:avatarUrl — keep them in sync.`,
 				Parameters: []smd.JSONSchema{
 					{
 						Name: "candidateID",
