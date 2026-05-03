@@ -2,10 +2,12 @@ package rpc
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"apisrv/pkg/db"
@@ -181,4 +183,132 @@ func TestDB_Middleware_RejectsCandidateOnAdminMethod(t *testing.T) {
 			So(r.Error, ShouldBeNil)
 		})
 	})
+}
+
+// TestDB_Middleware_RegisteredTier covers the third auth tier (admin OR
+// candidate, but never anonymous), used by candidate.SetLink and intended
+// for any future "any authenticated" RPC.
+func TestDB_Middleware_RegisteredTier(t *testing.T) {
+	Convey("Registered methods accept admin or candidate, reject anonymous", t, func() {
+		hs, dbo := newHTTPHarness(t)
+		ctx := t.Context()
+
+		adminKey := seedAdmin(t, ctx, dbo, "admin.reg")
+
+		// Seed one stage so candidate.Add succeeds and produces a candidateStage row.
+		stageResp := rpcCall(t, hs, adminKey, NSStage, RPC.StageService.Add, map[string]any{
+			"alias": "s1", "order": 1, "title": "t", "shortTitle": "s", "maxScore": 10,
+		})
+		So(stageResp.Error, ShouldBeNil)
+
+		// Two candidates so we can also test cross-candidate access.
+		ownerCand, ownerKey := registerCandidate(t, ctx, hs, dbo, "owner.user")
+		_, otherKey := registerCandidate(t, ctx, hs, dbo, "other.user")
+
+		// Find the empty CandidateStage created for ownerCand.
+		repo := db.NewApprenticeRepo(dbo)
+		csList, err := repo.CandidateStagesByFilters(ctx,
+			&db.CandidateStageSearch{CandidateID: &ownerCand.ID}, db.PagerNoLimit)
+		So(err, ShouldBeNil)
+		So(csList, ShouldHaveLength, 1)
+		csID := csList[0].ID
+
+		Convey("anonymous → 401", func() {
+			r := rpcCall(t, hs, "", NSCandidate, RPC.CandidateService.SetLink, csID, "https://example.com/x")
+			So(r.Error, ShouldNotBeNil)
+			So(r.Error.Code, ShouldEqual, http.StatusUnauthorized)
+		})
+
+		Convey("admin can set on any candidateStage", func() {
+			r := rpcCall(t, hs, adminKey, NSCandidate, RPC.CandidateService.SetLink, csID, "https://example.com/admin")
+			So(r.Error, ShouldBeNil)
+		})
+
+		Convey("candidate can set on own candidateStage", func() {
+			r := rpcCall(t, hs, ownerKey, NSCandidate, RPC.CandidateService.SetLink, csID, "https://example.com/own")
+			So(r.Error, ShouldBeNil)
+
+			updated, err := repo.CandidateStageByID(ctx, csID, repo.FullCandidateStage())
+			So(err, ShouldBeNil)
+			So(updated.Link, ShouldNotBeNil)
+			So(*updated.Link, ShouldEqual, "https://example.com/own")
+		})
+
+		Convey("candidate cannot set on someone else's candidateStage → 403", func() {
+			r := rpcCall(t, hs, otherKey, NSCandidate, RPC.CandidateService.SetLink, csID, "https://example.com/oops")
+			So(r.Error, ShouldNotBeNil)
+			So(r.Error.Code, ShouldEqual, http.StatusForbidden)
+		})
+
+		Convey("nil link detaches", func() {
+			// Attach first.
+			r := rpcCall(t, hs, ownerKey, NSCandidate, RPC.CandidateService.SetLink, csID, "https://example.com/a")
+			So(r.Error, ShouldBeNil)
+			// Then detach with explicit null (raw JSON to ensure null vs missing).
+			r = rpcCallRaw(t, hs, ownerKey, NSCandidate, RPC.CandidateService.SetLink, []byte(`[`+strconv.Itoa(csID)+`,null]`))
+			So(r.Error, ShouldBeNil)
+
+			updated, err := repo.CandidateStageByID(ctx, csID, repo.FullCandidateStage())
+			So(err, ShouldBeNil)
+			So(updated.Link, ShouldBeNil)
+		})
+
+		Convey("invalid link → 400", func() {
+			r := rpcCall(t, hs, ownerKey, NSCandidate, RPC.CandidateService.SetLink, csID, "ftp://nope")
+			So(r.Error, ShouldNotBeNil)
+			So(r.Error.Code, ShouldEqual, http.StatusBadRequest)
+		})
+
+		Convey("unknown candidateStageId → 404", func() {
+			r := rpcCall(t, hs, adminKey, NSCandidate, RPC.CandidateService.SetLink, 99999, "https://example.com/x")
+			So(r.Error, ShouldNotBeNil)
+			So(r.Error.Code, ShouldEqual, http.StatusNotFound)
+		})
+	})
+}
+
+// rpcCallRaw lets a test send a raw JSON params array (e.g. to embed an explicit
+// `null`) instead of the default Go-marshalled []any.
+func rpcCallRaw(t *testing.T, hs *httptest.Server, header, ns, method string, rawParams []byte) rpcResponse {
+	t.Helper()
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"` + ns + `.` + method + `","params":` + string(rawParams) + `}`)
+	req, err := http.NewRequest(http.MethodPost, hs.URL, bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("new req: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if header != "" {
+		req.Header.Set(AuthKey, header)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	var out rpcResponse
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("unmarshal %q: %v", string(raw), err)
+	}
+	return out
+}
+
+// registerCandidate creates a candidate via auth.register, returning the
+// resulting *Candidate and the authKey. Resolves the candidate via the live
+// DB by login since auth.register only echoes back the authKey.
+func registerCandidate(t *testing.T, ctx context.Context, hs *httptest.Server, dbo db.DB, login string) (*db.Candidate, string) {
+	t.Helper()
+	resp := rpcCall(t, hs, "", NSAuth, RPC.AuthService.Register, login, "passw0rd!", UserTypeUser)
+	if resp.Error != nil {
+		t.Fatalf("register %s: code=%d %s", login, resp.Error.Code, resp.Error.Message)
+	}
+	var key string
+	if err := json.Unmarshal(resp.Result, &key); err != nil {
+		t.Fatalf("unmarshal authKey: %v", err)
+	}
+	cand, err := db.NewApprenticeRepo(dbo).EnabledCandidateByLogin(ctx, login)
+	if err != nil || cand == nil {
+		t.Fatalf("resolve candidate %s: %v", login, err)
+	}
+	return cand, key
 }

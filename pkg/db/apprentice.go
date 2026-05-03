@@ -24,14 +24,14 @@ func NewApprenticeRepo(db orm.DB) ApprenticeRepo {
 			Tables.Stage.Name:     {StatusFilter},
 		},
 		sort: map[string][]SortField{
-			Tables.Candidate.Name:  {{Column: Columns.Candidate.CreatedAt, Direction: SortDesc}},
-			Tables.StageScore.Name: {{Column: Columns.StageScore.ID, Direction: SortDesc}},
-			Tables.Stage.Name:      {{Column: Columns.Stage.Title, Direction: SortAsc}},
+			Tables.Candidate.Name:      {{Column: Columns.Candidate.CreatedAt, Direction: SortDesc}},
+			Tables.CandidateStage.Name: {{Column: Columns.CandidateStage.CreatedAt, Direction: SortDesc}},
+			Tables.Stage.Name:          {{Column: Columns.Stage.Title, Direction: SortAsc}},
 		},
 		join: map[string][]string{
-			Tables.Candidate.Name:  {TableColumns, Columns.Candidate.CurrentStage},
-			Tables.StageScore.Name: {TableColumns, Columns.StageScore.Candidate, Columns.StageScore.Stage},
-			Tables.Stage.Name:      {TableColumns},
+			Tables.Candidate.Name:      {TableColumns, Columns.Candidate.CurrentStage},
+			Tables.CandidateStage.Name: {TableColumns, Columns.CandidateStage.Candidate, Columns.CandidateStage.Stage},
+			Tables.Stage.Name:          {TableColumns},
 		},
 	}
 }
@@ -131,27 +131,27 @@ func (ar ApprenticeRepo) DeleteCandidate(ctx context.Context, id int) (deleted b
 	return ar.UpdateCandidate(ctx, candidate, WithColumns(Columns.Candidate.StatusID))
 }
 
-/*** StageScore ***/
+/*** CandidateStage ***/
 
-// FullStageScore returns full joins with all columns
-func (ar ApprenticeRepo) FullStageScore() OpFunc {
-	return WithColumns(ar.join[Tables.StageScore.Name]...)
+// FullCandidateStage returns full joins with all columns
+func (ar ApprenticeRepo) FullCandidateStage() OpFunc {
+	return WithColumns(ar.join[Tables.CandidateStage.Name]...)
 }
 
-// DefaultStageScoreSort returns default sort.
-func (ar ApprenticeRepo) DefaultStageScoreSort() OpFunc {
-	return WithSort(ar.sort[Tables.StageScore.Name]...)
+// DefaultCandidateStageSort returns default sort.
+func (ar ApprenticeRepo) DefaultCandidateStageSort() OpFunc {
+	return WithSort(ar.sort[Tables.CandidateStage.Name]...)
 }
 
-// StageScoreByID is a function that returns StageScore by ID(s) or nil.
-func (ar ApprenticeRepo) StageScoreByID(ctx context.Context, id int, ops ...OpFunc) (*StageScore, error) {
-	return ar.OneStageScore(ctx, &StageScoreSearch{ID: &id}, ops...)
+// CandidateStageByID is a function that returns CandidateStage by ID(s) or nil.
+func (ar ApprenticeRepo) CandidateStageByID(ctx context.Context, id int, ops ...OpFunc) (*CandidateStage, error) {
+	return ar.OneCandidateStage(ctx, &CandidateStageSearch{ID: &id}, ops...)
 }
 
-// OneStageScore is a function that returns one StageScore by filters. It could return pg.ErrMultiRows.
-func (ar ApprenticeRepo) OneStageScore(ctx context.Context, search *StageScoreSearch, ops ...OpFunc) (*StageScore, error) {
-	obj := &StageScore{}
-	err := buildQuery(ctx, ar.db, obj, search, ar.filters[Tables.StageScore.Name], PagerTwo, ops...).Select()
+// OneCandidateStage is a function that returns one CandidateStage by filters. It could return pg.ErrMultiRows.
+func (ar ApprenticeRepo) OneCandidateStage(ctx context.Context, search *CandidateStageSearch, ops ...OpFunc) (*CandidateStage, error) {
+	obj := &CandidateStage{}
+	err := buildQuery(ctx, ar.db, obj, search, ar.filters[Tables.CandidateStage.Name], PagerTwo, ops...).Select()
 
 	if errors.Is(err, pg.ErrMultiRows) {
 		return nil, err
@@ -162,31 +162,34 @@ func (ar ApprenticeRepo) OneStageScore(ctx context.Context, search *StageScoreSe
 	return obj, err
 }
 
-// StageScoresByFilters returns StageScore list.
-func (ar ApprenticeRepo) StageScoresByFilters(ctx context.Context, search *StageScoreSearch, pager Pager, ops ...OpFunc) (stageScores []StageScore, err error) {
-	err = buildQuery(ctx, ar.db, &stageScores, search, ar.filters[Tables.StageScore.Name], pager, ops...).Select()
+// CandidateStagesByFilters returns CandidateStage list.
+func (ar ApprenticeRepo) CandidateStagesByFilters(ctx context.Context, search *CandidateStageSearch, pager Pager, ops ...OpFunc) (candidateStages []CandidateStage, err error) {
+	err = buildQuery(ctx, ar.db, &candidateStages, search, ar.filters[Tables.CandidateStage.Name], pager, ops...).Select()
 	return
 }
 
-// CountStageScores returns count
-func (ar ApprenticeRepo) CountStageScores(ctx context.Context, search *StageScoreSearch, ops ...OpFunc) (int, error) {
-	return buildQuery(ctx, ar.db, &StageScore{}, search, ar.filters[Tables.StageScore.Name], PagerOne, ops...).Count()
+// CountCandidateStages returns count
+func (ar ApprenticeRepo) CountCandidateStages(ctx context.Context, search *CandidateStageSearch, ops ...OpFunc) (int, error) {
+	return buildQuery(ctx, ar.db, &CandidateStage{}, search, ar.filters[Tables.CandidateStage.Name], PagerOne, ops...).Count()
 }
 
-// AddStageScore adds StageScore to DB.
-func (ar ApprenticeRepo) AddStageScore(ctx context.Context, stageScore *StageScore, ops ...OpFunc) (*StageScore, error) {
-	q := ar.db.ModelContext(ctx, stageScore)
+// AddCandidateStage adds CandidateStage to DB.
+func (ar ApprenticeRepo) AddCandidateStage(ctx context.Context, candidateStage *CandidateStage, ops ...OpFunc) (*CandidateStage, error) {
+	q := ar.db.ModelContext(ctx, candidateStage)
+	if len(ops) == 0 {
+		q = q.ExcludeColumn(Columns.CandidateStage.CreatedAt)
+	}
 	applyOps(q, ops...)
 	_, err := q.Insert()
 
-	return stageScore, err
+	return candidateStage, err
 }
 
-// UpdateStageScore updates StageScore in DB.
-func (ar ApprenticeRepo) UpdateStageScore(ctx context.Context, stageScore *StageScore, ops ...OpFunc) (bool, error) {
-	q := ar.db.ModelContext(ctx, stageScore).WherePK()
+// UpdateCandidateStage updates CandidateStage in DB.
+func (ar ApprenticeRepo) UpdateCandidateStage(ctx context.Context, candidateStage *CandidateStage, ops ...OpFunc) (bool, error) {
+	q := ar.db.ModelContext(ctx, candidateStage).WherePK()
 	if len(ops) == 0 {
-		q = q.ExcludeColumn(Columns.StageScore.ID)
+		q = q.ExcludeColumn(Columns.CandidateStage.ID, Columns.CandidateStage.CreatedAt)
 	}
 	applyOps(q, ops...)
 	res, err := q.Update()
@@ -197,11 +200,11 @@ func (ar ApprenticeRepo) UpdateStageScore(ctx context.Context, stageScore *Stage
 	return res.RowsAffected() > 0, err
 }
 
-// DeleteStageScore deletes StageScore from DB.
-func (ar ApprenticeRepo) DeleteStageScore(ctx context.Context, id int) (deleted bool, err error) {
-	stageScore := &StageScore{ID: id}
+// DeleteCandidateStage deletes CandidateStage from DB.
+func (ar ApprenticeRepo) DeleteCandidateStage(ctx context.Context, id int) (deleted bool, err error) {
+	candidateStage := &CandidateStage{ID: id}
 
-	res, err := ar.db.ModelContext(ctx, stageScore).WherePK().Delete()
+	res, err := ar.db.ModelContext(ctx, candidateStage).WherePK().Delete()
 	if err != nil {
 		return false, err
 	}

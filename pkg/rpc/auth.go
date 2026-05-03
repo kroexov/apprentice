@@ -196,6 +196,9 @@ func (s AuthService) registerUser(ctx context.Context, login, password string) (
 			}
 			return txErr
 		}
+		if _, txErr = txRepo.CreateCandidateStage(ctx, created.ID, stage); txErr != nil {
+			return txErr
+		}
 		authKey = generateAuthKey()
 		if _, txErr = txRepo.AuthenticateCandidate(ctx, created, authKey); txErr != nil {
 			return txErr
@@ -248,8 +251,14 @@ func validateRegisterCredentials(login, password string) error {
 	return nil
 }
 
+// bcryptCost is the work factor for bcrypt. Production = 14 (~800ms/hash on
+// modern hardware) for password-storage strength. Tests override it to
+// bcrypt.MinCost (4, ~3ms) via an init() in *_test.go to keep the suite fast —
+// anything that asserts timing is responsible for restoring/forcing a value.
+var bcryptCost = 14
+
 func passwordHash(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
 	if err != nil {
 		return "", err
 	}

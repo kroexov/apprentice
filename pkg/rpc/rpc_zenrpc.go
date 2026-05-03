@@ -12,7 +12,7 @@ import (
 
 var RPC = struct {
 	AuthService      struct{ Login, Register string }
-	CandidateService struct{ Get, GetByID, Add, Update, Delete, Advance, Rate, Rollback, Kanban string }
+	CandidateService struct{ Get, GetByID, Add, Update, Delete, Advance, Rate, Rollback, SetLink, Kanban string }
 	DashboardService struct{ Summary string }
 	StageService     struct{ Get, GetByID, Add, Update, Delete, Reorder string }
 }{
@@ -20,7 +20,7 @@ var RPC = struct {
 		Login:    "login",
 		Register: "register",
 	},
-	CandidateService: struct{ Get, GetByID, Add, Update, Delete, Advance, Rate, Rollback, Kanban string }{
+	CandidateService: struct{ Get, GetByID, Add, Update, Delete, Advance, Rate, Rollback, SetLink, Kanban string }{
 		Get:      "get",
 		GetByID:  "getbyid",
 		Add:      "add",
@@ -29,6 +29,7 @@ var RPC = struct {
 		Advance:  "advance",
 		Rate:     "rate",
 		Rollback: "rollback",
+		SetLink:  "setlink",
 		Kanban:   "kanban",
 	},
 	DashboardService: struct{ Summary string }{
@@ -298,6 +299,10 @@ func (CandidateService) SMD() smd.ServiceInfo {
 									Name: "maxScore",
 									Type: smd.Integer,
 								},
+								{
+									Name: "deadlineDays",
+									Type: smd.Integer,
+								},
 							},
 						},
 					},
@@ -440,6 +445,10 @@ func (CandidateService) SMD() smd.ServiceInfo {
 									Name: "maxScore",
 									Type: smd.Integer,
 								},
+								{
+									Name: "deadlineDays",
+									Type: smd.Integer,
+								},
 							},
 						},
 						"CandidateStageHistory": {
@@ -474,9 +483,24 @@ func (CandidateService) SMD() smd.ServiceInfo {
 									Type:     smd.String,
 								},
 								{
-									Name:     "scoreId",
+									Name:     "candidateStageId",
 									Optional: true,
 									Type:     smd.Integer,
+								},
+								{
+									Name:     "link",
+									Optional: true,
+									Type:     smd.String,
+								},
+								{
+									Name:     "deadline",
+									Optional: true,
+									Type:     smd.String,
+								},
+								{
+									Name:     "createdAt",
+									Optional: true,
+									Type:     smd.String,
 								},
 							},
 						},
@@ -780,7 +804,10 @@ the candidate once and not store it.`,
 			},
 			"Advance": {
 				Description: `Advance scores the candidate for their current stage and moves them to the next one.
-If current stage is the last, completedAt is set instead.`,
+If current stage is the last, completedAt is set instead.
+
+Updates the existing empty CandidateStage row for the current stage with
+score/scoredAt; on transition, creates a new empty row for the next stage.`,
 				Parameters: []smd.JSONSchema{
 					{
 						Name: "candidateID",
@@ -805,9 +832,9 @@ If current stage is the last, completedAt is set instead.`,
 							Type:     smd.Object,
 						},
 						{
-							Name:     "score",
+							Name:     "candidateStage",
 							Optional: true,
-							Ref:      "#/definitions/Score",
+							Ref:      "#/definitions/CandidateStage",
 							Type:     smd.Object,
 						},
 					},
@@ -890,7 +917,7 @@ If current stage is the last, completedAt is set instead.`,
 								},
 							},
 						},
-						"Score": {
+						"CandidateStage": {
 							Type: "object",
 							Properties: smd.PropertyList{
 								{
@@ -906,11 +933,27 @@ If current stage is the last, completedAt is set instead.`,
 									Type: smd.Integer,
 								},
 								{
-									Name: "score",
-									Type: smd.Integer,
+									Name:     "link",
+									Optional: true,
+									Type:     smd.String,
 								},
 								{
-									Name: "scoredAt",
+									Name:     "score",
+									Optional: true,
+									Type:     smd.Integer,
+								},
+								{
+									Name:     "scoredAt",
+									Optional: true,
+									Type:     smd.String,
+								},
+								{
+									Name:     "deadline",
+									Optional: true,
+									Type:     smd.String,
+								},
+								{
+									Name: "createdAt",
 									Type: smd.String,
 								},
 							},
@@ -924,10 +967,12 @@ If current stage is the last, completedAt is set instead.`,
 				},
 			},
 			"Rate": {
-				Description: `Rate corrects an existing score without changing the candidate's current stage.`,
+				Description: `Rate sets or corrects the score on an existing CandidateStage row without
+changing the candidate's current stage. ScoredAt is set to now() if it was
+previously NULL; otherwise preserved.`,
 				Parameters: []smd.JSONSchema{
 					{
-						Name: "scoreID",
+						Name: "candidateStageID",
 						Type: smd.Integer,
 					},
 					{
@@ -937,10 +982,10 @@ If current stage is the last, completedAt is set instead.`,
 					},
 				},
 				Returns: smd.JSONSchema{
-					Description: `Score`,
+					Description: `CandidateStage`,
 					Optional:    true,
 					Type:        smd.Object,
-					TypeName:    "Score",
+					TypeName:    "CandidateStage",
 					Properties: smd.PropertyList{
 						{
 							Name: "id",
@@ -955,11 +1000,27 @@ If current stage is the last, completedAt is set instead.`,
 							Type: smd.Integer,
 						},
 						{
-							Name: "score",
-							Type: smd.Integer,
+							Name:     "link",
+							Optional: true,
+							Type:     smd.String,
 						},
 						{
-							Name: "scoredAt",
+							Name:     "score",
+							Optional: true,
+							Type:     smd.Integer,
+						},
+						{
+							Name:     "scoredAt",
+							Optional: true,
+							Type:     smd.String,
+						},
+						{
+							Name:     "deadline",
+							Optional: true,
+							Type:     smd.String,
+						},
+						{
+							Name: "createdAt",
 							Type: smd.String,
 						},
 					},
@@ -971,8 +1032,15 @@ If current stage is the last, completedAt is set instead.`,
 				},
 			},
 			"Rollback": {
-				Description: `Rollback removes the candidate's most recent score and moves them one stage back.
-If the candidate was completed, completedAt is cleared.`,
+				Description: `Rollback reverts the candidate's most recent Advance:
+- For an in-progress candidate: deletes the empty CandidateStage of the
+current stage and clears score/scoredAt on the previously scored row,
+leaving the candidate "on" the previous stage with no score.
+- For a completed candidate: clears completedAt and clears score/scoredAt
+on the last scored row (which is also the current stage row, no empty
+row to delete).
+
+Deadline on the row that becomes "current" is left unchanged.`,
 				Parameters: []smd.JSONSchema{
 					{
 						Name: "candidateID",
@@ -1066,6 +1134,79 @@ If the candidate was completed, completedAt is cleared.`,
 					500: "Internal Error",
 				},
 			},
+			"SetLink": {
+				Description: `SetLink attaches or detaches the link on a CandidateStage.
+
+Auth: requires admin OR candidate principal (registered tier in middleware).
+Admin can set any candidateStage; candidate may only set rows where
+candidateId matches their own. Anonymous requests are rejected by middleware.
+
+link == nil or empty/whitespace clears the link (detach).
+Otherwise the link is validated as a http(s) URL no longer than 2048 chars.`,
+				Parameters: []smd.JSONSchema{
+					{
+						Name: "candidateStageID",
+						Type: smd.Integer,
+					},
+					{
+						Name:        "link",
+						Optional:    true,
+						Description: `*string`,
+						Type:        smd.String,
+					},
+				},
+				Returns: smd.JSONSchema{
+					Description: `CandidateStage`,
+					Optional:    true,
+					Type:        smd.Object,
+					TypeName:    "CandidateStage",
+					Properties: smd.PropertyList{
+						{
+							Name: "id",
+							Type: smd.Integer,
+						},
+						{
+							Name: "candidateId",
+							Type: smd.Integer,
+						},
+						{
+							Name: "stageId",
+							Type: smd.Integer,
+						},
+						{
+							Name:     "link",
+							Optional: true,
+							Type:     smd.String,
+						},
+						{
+							Name:     "score",
+							Optional: true,
+							Type:     smd.Integer,
+						},
+						{
+							Name:     "scoredAt",
+							Optional: true,
+							Type:     smd.String,
+						},
+						{
+							Name:     "deadline",
+							Optional: true,
+							Type:     smd.String,
+						},
+						{
+							Name: "createdAt",
+							Type: smd.String,
+						},
+					},
+				},
+				Errors: map[int]string{
+					401: "Unauthorized",
+					403: "Forbidden",
+					404: "Not Found",
+					400: "Validation Error",
+					500: "Internal Error",
+				},
+			},
 			"Kanban": {
 				Description: `Kanban returns candidates grouped by their current stage.`,
 				Parameters:  []smd.JSONSchema{},
@@ -1124,6 +1265,10 @@ If the candidate was completed, completedAt is cleared.`,
 								},
 								{
 									Name: "maxScore",
+									Type: smd.Integer,
+								},
+								{
+									Name: "deadlineDays",
 									Type: smd.Integer,
 								},
 							},
@@ -1341,12 +1486,12 @@ func (s CandidateService) Invoke(ctx context.Context, method string, params json
 
 	case RPC.CandidateService.Rate:
 		var args = struct {
-			ScoreID int `json:"scoreID"`
-			Score   int `json:"score"`
+			CandidateStageID int `json:"candidateStageID"`
+			Score            int `json:"score"`
 		}{}
 
 		if zenrpc.IsArray(params) {
-			if params, err = zenrpc.ConvertToObject([]string{"scoreID", "score"}, params); err != nil {
+			if params, err = zenrpc.ConvertToObject([]string{"candidateStageID", "score"}, params); err != nil {
 				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
 			}
 		}
@@ -1357,7 +1502,7 @@ func (s CandidateService) Invoke(ctx context.Context, method string, params json
 			}
 		}
 
-		resp.Set(s.Rate(ctx, args.ScoreID, args.Score))
+		resp.Set(s.Rate(ctx, args.CandidateStageID, args.Score))
 
 	case RPC.CandidateService.Rollback:
 		var args = struct {
@@ -1377,6 +1522,26 @@ func (s CandidateService) Invoke(ctx context.Context, method string, params json
 		}
 
 		resp.Set(s.Rollback(ctx, args.CandidateID))
+
+	case RPC.CandidateService.SetLink:
+		var args = struct {
+			CandidateStageID int     `json:"candidateStageID"`
+			Link             *string `json:"link"`
+		}{}
+
+		if zenrpc.IsArray(params) {
+			if params, err = zenrpc.ConvertToObject([]string{"candidateStageID", "link"}, params); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &args); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		resp.Set(s.SetLink(ctx, args.CandidateStageID, args.Link))
 
 	case RPC.CandidateService.Kanban:
 		resp.Set(s.Kanban(ctx))
@@ -1490,6 +1655,10 @@ func (StageService) SMD() smd.ServiceInfo {
 									Name: "maxScore",
 									Type: smd.Integer,
 								},
+								{
+									Name: "deadlineDays",
+									Type: smd.Integer,
+								},
 							},
 						},
 					},
@@ -1541,6 +1710,10 @@ func (StageService) SMD() smd.ServiceInfo {
 							Name: "maxScore",
 							Type: smd.Integer,
 						},
+						{
+							Name: "deadlineDays",
+							Type: smd.Integer,
+						},
 					},
 				},
 				Errors: map[int]string{
@@ -1585,6 +1758,10 @@ func (StageService) SMD() smd.ServiceInfo {
 								Name: "maxScore",
 								Type: smd.Integer,
 							},
+							{
+								Name: "deadlineDays",
+								Type: smd.Integer,
+							},
 						},
 					},
 				},
@@ -1620,6 +1797,10 @@ func (StageService) SMD() smd.ServiceInfo {
 						},
 						{
 							Name: "maxScore",
+							Type: smd.Integer,
+						},
+						{
+							Name: "deadlineDays",
 							Type: smd.Integer,
 						},
 					},
@@ -1664,6 +1845,10 @@ func (StageService) SMD() smd.ServiceInfo {
 							},
 							{
 								Name: "maxScore",
+								Type: smd.Integer,
+							},
+							{
+								Name: "deadlineDays",
 								Type: smd.Integer,
 							},
 						},
@@ -1749,6 +1934,10 @@ All enabled stages must be present, no duplicates allowed.`,
 								},
 								{
 									Name: "maxScore",
+									Type: smd.Integer,
+								},
+								{
+									Name: "deadlineDays",
 									Type: smd.Integer,
 								},
 							},

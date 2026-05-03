@@ -62,6 +62,8 @@
               comment="описание этапа"></column>
       <column name="maxScore" type="integer" nullable="false" default="10"
               comment="максимум баллов за этап"></column>
+      <column name="deadlineDays" type="integer" nullable="false" default="0"
+              comment="дни на прохождение этапа от попадания на него; 0 = без дедлайна"></column>
       <column name="statusId" type="integer" nullable="false" default="1"
               comment="enabled=1, disabled=2, deleted=3"></column>
       <pk name="stages_pkey">
@@ -71,6 +73,7 @@
         <column name="statusId" references="statusId"></column>
       </fk>
       <check name="stages_maxScore_check"><![CDATA["maxScore" > 0 AND "maxScore" <= 100]]></check>
+      <check name="stages_deadlineDays_check"><![CDATA["deadlineDays" >= 0 AND "deadlineDays" <= 365]]></check>
       <check name="stages_alias_check"><![CDATA[alias ~ '^[a-z0-9.\-_]{2,64}$']]></check>
       <!-- Partial unique indexes ignore soft-deleted rows so alias/order are reusable. -->
       <index name="stages_alias_key" using="btree" unique="true" where="&quot;statusId&quot; &lt;&gt; 3">
@@ -143,34 +146,42 @@
     </table>
 
     <!-- ============================================================ -->
-    <!-- Оценка кандидата за пройденный этап                           -->
+    <!-- Прохождение кандидатом этапа                                  -->
     <!-- ============================================================ -->
-    <table name="stageScores" comment="Оценки пройденных этапов">
-      <column name="scoreId" type="serial" nullable="false"></column>
+    <table name="candidateStages" comment="Прохождение кандидатом этапа: артефакт, дедлайн, оценка">
+      <column name="candidateStageId" type="serial" nullable="false"></column>
       <column name="candidateId" type="integer" nullable="false"></column>
       <column name="stageId" type="integer" nullable="false"></column>
-      <column name="score" type="smallint" nullable="false"
-              comment="балл 1..stages.maxScore"></column>
-      <column name="scoredAt" type="timestamptz" nullable="false" default="now()"></column>
+      <column name="link" type="text" nullable="true"
+              comment="ссылка на тестовое задание / артефакт"></column>
+      <column name="score" type="smallint" nullable="true"
+              comment="балл 1..stages.maxScore; NULL пока не оценено"></column>
+      <column name="scoredAt" type="timestamptz" nullable="true"
+              comment="когда поставлена оценка"></column>
       <column name="scoredBy" type="integer" nullable="true"
               comment="users.userId — кто поставил оценку (на вырост)"></column>
-      <pk name="stageScores_pkey">
-        <column name="scoreId"></column>
+      <column name="deadline" type="timestamptz" nullable="true"
+              comment="крайний срок прохождения; вычисляется как createdAt + stages.deadlineDays"></column>
+      <column name="createdAt" type="timestamptz" nullable="false" default="now()"
+              comment="момент попадания кандидата на этап"></column>
+      <pk name="candidateStages_pkey">
+        <column name="candidateStageId"></column>
       </pk>
-      <unique name="stageScores_candidate_stage_key">
+      <unique name="candidateStages_candidate_stage_key">
         <column name="candidateId"></column>
         <column name="stageId"></column>
       </unique>
-      <fk name="stageScores_candidateId_fkey" to-table="candidates" on-delete="cascade">
+      <fk name="candidateStages_candidateId_fkey" to-table="candidates" on-delete="cascade">
         <column name="candidateId" references="candidateId"></column>
       </fk>
-      <fk name="stageScores_stageId_fkey" to-table="stages" on-delete="restrict">
+      <fk name="candidateStages_stageId_fkey" to-table="stages" on-delete="restrict">
         <column name="stageId" references="stageId"></column>
       </fk>
-      <fk name="stageScores_scoredBy_fkey" to-table="users" on-delete="set null">
+      <fk name="candidateStages_scoredBy_fkey" to-table="users" on-delete="set null">
         <column name="scoredBy" references="userId"></column>
       </fk>
-      <check name="stageScores_score_check"><![CDATA[score >= 1 AND score <= 100]]></check>
+      <check name="candidateStages_score_check"><![CDATA[score IS NULL OR (score >= 1 AND score <= 100)]]></check>
+      <check name="candidateStages_scored_consistency_check"><![CDATA[(score IS NULL AND "scoredAt" IS NULL) OR (score IS NOT NULL AND "scoredAt" IS NOT NULL)]]></check>
     </table>
 
     <!-- Индексы (на уровне схемы, не внутри таблиц) -->
@@ -187,10 +198,10 @@
     <index name="IX_candidates_authKey" table="candidates" using="btree" where="&quot;authKey&quot; IS NOT NULL">
       <column name="authKey"></column>
     </index>
-    <index name="IX_stageScores_candidateId" table="stageScores" using="btree">
+    <index name="IX_candidateStages_candidateId" table="candidateStages" using="btree">
       <column name="candidateId"></column>
     </index>
-    <index name="IX_stageScores_stageId" table="stageScores" using="btree">
+    <index name="IX_candidateStages_stageId" table="candidateStages" using="btree">
       <column name="stageId"></column>
     </index>
 

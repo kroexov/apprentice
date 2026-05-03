@@ -148,8 +148,12 @@ func (s AuthService) generateRandom(length int) string {
 	return string(b)
 }
 
+// bcryptCost mirrors the same knob in pkg/rpc/auth.go: production uses 14 for
+// password-storage strength; tests drop it to bcrypt.MinCost via init().
+var bcryptCost = 14
+
 func passwordHash(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
 	return string(bytes), err
 }
 

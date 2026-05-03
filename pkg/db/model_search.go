@@ -300,7 +300,6 @@ type CandidateSearch struct {
 	IDs              []int
 	NameILike        *string
 	HandleILike      *string
-	LoginILike       *string
 	CityILike        *string
 	BioILike         *string
 	AvatarColorILike *string
@@ -375,9 +374,6 @@ func (cs *CandidateSearch) Apply(query *orm.Query) *orm.Query {
 	if cs.HandleILike != nil {
 		Filter{Columns.Candidate.Handle, *cs.HandleILike, SearchTypeILike, false}.Apply(query)
 	}
-	if cs.LoginILike != nil {
-		Filter{Columns.Candidate.Login, *cs.LoginILike, SearchTypeILike, false}.Apply(query)
-	}
 	if cs.CityILike != nil {
 		Filter{Columns.Candidate.City, *cs.CityILike, SearchTypeILike, false}.Apply(query)
 	}
@@ -408,51 +404,67 @@ func (cs *CandidateSearch) Q() applier {
 	}
 }
 
-type StageScoreSearch struct {
+type CandidateStageSearch struct {
 	search
 
 	ID          *int
 	CandidateID *int
 	StageID     *int
+	Link        *string
 	Score       *int
 	ScoredAt    *time.Time
+	ScoredBy    *int
+	Deadline    *time.Time
+	CreatedAt   *time.Time
 	IDs         []int
 }
 
-func (sss *StageScoreSearch) Apply(query *orm.Query) *orm.Query {
-	if sss == nil {
+func (css *CandidateStageSearch) Apply(query *orm.Query) *orm.Query {
+	if css == nil {
 		return query
 	}
-	if sss.ID != nil {
-		sss.where(query, Tables.StageScore.Alias, Columns.StageScore.ID, sss.ID)
+	if css.ID != nil {
+		css.where(query, Tables.CandidateStage.Alias, Columns.CandidateStage.ID, css.ID)
 	}
-	if sss.CandidateID != nil {
-		sss.where(query, Tables.StageScore.Alias, Columns.StageScore.CandidateID, sss.CandidateID)
+	if css.CandidateID != nil {
+		css.where(query, Tables.CandidateStage.Alias, Columns.CandidateStage.CandidateID, css.CandidateID)
 	}
-	if sss.StageID != nil {
-		sss.where(query, Tables.StageScore.Alias, Columns.StageScore.StageID, sss.StageID)
+	if css.StageID != nil {
+		css.where(query, Tables.CandidateStage.Alias, Columns.CandidateStage.StageID, css.StageID)
 	}
-	if sss.Score != nil {
-		sss.where(query, Tables.StageScore.Alias, Columns.StageScore.Score, sss.Score)
+	if css.Link != nil {
+		css.where(query, Tables.CandidateStage.Alias, Columns.CandidateStage.Link, css.Link)
 	}
-	if sss.ScoredAt != nil {
-		sss.where(query, Tables.StageScore.Alias, Columns.StageScore.ScoredAt, sss.ScoredAt)
+	if css.Score != nil {
+		css.where(query, Tables.CandidateStage.Alias, Columns.CandidateStage.Score, css.Score)
 	}
-	if len(sss.IDs) > 0 {
-		Filter{Columns.StageScore.ID, sss.IDs, SearchTypeArray, false}.Apply(query)
+	if css.ScoredAt != nil {
+		css.where(query, Tables.CandidateStage.Alias, Columns.CandidateStage.ScoredAt, css.ScoredAt)
+	}
+	if css.ScoredBy != nil {
+		css.where(query, Tables.CandidateStage.Alias, Columns.CandidateStage.ScoredBy, css.ScoredBy)
+	}
+	if css.Deadline != nil {
+		css.where(query, Tables.CandidateStage.Alias, Columns.CandidateStage.Deadline, css.Deadline)
+	}
+	if css.CreatedAt != nil {
+		css.where(query, Tables.CandidateStage.Alias, Columns.CandidateStage.CreatedAt, css.CreatedAt)
+	}
+	if len(css.IDs) > 0 {
+		Filter{Columns.CandidateStage.ID, css.IDs, SearchTypeArray, false}.Apply(query)
 	}
 
-	sss.apply(query)
+	css.apply(query)
 
 	return query
 }
 
-func (sss *StageScoreSearch) Q() applier {
+func (css *CandidateStageSearch) Q() applier {
 	return func(query *orm.Query) (*orm.Query, error) {
-		if sss == nil {
+		if css == nil {
 			return query, nil
 		}
-		return sss.Apply(query), nil
+		return css.Apply(query), nil
 	}
 }
 
@@ -466,6 +478,7 @@ type StageSearch struct {
 	ShortTitle       *string
 	Description      *string
 	MaxScore         *int
+	DeadlineDays     *int
 	StatusID         *int
 	IDs              []int
 	NotID            *int
@@ -498,6 +511,9 @@ func (ss *StageSearch) Apply(query *orm.Query) *orm.Query {
 	}
 	if ss.MaxScore != nil {
 		ss.where(query, Tables.Stage.Alias, Columns.Stage.MaxScore, ss.MaxScore)
+	}
+	if ss.DeadlineDays != nil {
+		ss.where(query, Tables.Stage.Alias, Columns.Stage.DeadlineDays, ss.DeadlineDays)
 	}
 	if ss.StatusID != nil {
 		ss.where(query, Tables.Stage.Alias, Columns.Stage.StatusID, ss.StatusID)

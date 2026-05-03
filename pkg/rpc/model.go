@@ -57,13 +57,14 @@ func formatTimePtr(t *time.Time) *string {
 // ============================================================================
 
 type Stage struct {
-	ID          int    `json:"id"`
-	Alias       string `json:"alias"`
-	Order       int    `json:"order"`
-	Title       string `json:"title"`
-	ShortTitle  string `json:"shortTitle"`
-	Description string `json:"description"`
-	MaxScore    int    `json:"maxScore"`
+	ID           int    `json:"id"`
+	Alias        string `json:"alias"`
+	Order        int    `json:"order"`
+	Title        string `json:"title"`
+	ShortTitle   string `json:"shortTitle"`
+	Description  string `json:"description"`
+	MaxScore     int    `json:"maxScore"`
+	DeadlineDays int    `json:"deadlineDays"`
 }
 
 func NewStage(d *db.Stage) *Stage {
@@ -71,13 +72,14 @@ func NewStage(d *db.Stage) *Stage {
 		return nil
 	}
 	return &Stage{
-		ID:          d.ID,
-		Alias:       d.Alias,
-		Order:       d.Order,
-		Title:       d.Title,
-		ShortTitle:  d.ShortTitle,
-		Description: d.Description,
-		MaxScore:    d.MaxScore,
+		ID:           d.ID,
+		Alias:        d.Alias,
+		Order:        d.Order,
+		Title:        d.Title,
+		ShortTitle:   d.ShortTitle,
+		Description:  d.Description,
+		MaxScore:     d.MaxScore,
+		DeadlineDays: d.DeadlineDays,
 	}
 }
 
@@ -86,14 +88,15 @@ func (s *Stage) ToDB() *db.Stage {
 		return nil
 	}
 	return &db.Stage{
-		ID:          s.ID,
-		Alias:       s.Alias,
-		Order:       s.Order,
-		Title:       s.Title,
-		ShortTitle:  s.ShortTitle,
-		Description: s.Description,
-		MaxScore:    s.MaxScore,
-		StatusID:    db.StatusEnabled,
+		ID:           s.ID,
+		Alias:        s.Alias,
+		Order:        s.Order,
+		Title:        s.Title,
+		ShortTitle:   s.ShortTitle,
+		Description:  s.Description,
+		MaxScore:     s.MaxScore,
+		DeadlineDays: s.DeadlineDays,
+		StatusID:     db.StatusEnabled,
 	}
 }
 
@@ -185,13 +188,16 @@ func nilToEmpty(s []string) []string {
 
 // CandidateStageHistory — одна строка в истории этапов кандидата.
 type CandidateStageHistory struct {
-	StageID  int     `json:"stageId"`
-	Stage    *Stage  `json:"stage"`
-	Status   string  `json:"status"`
-	Score    *int    `json:"score"`
-	MaxScore int     `json:"maxScore"`
-	ScoredAt *string `json:"scoredAt"`
-	ScoreID  *int    `json:"scoreId"`
+	StageID          int     `json:"stageId"`
+	Stage            *Stage  `json:"stage"`
+	Status           string  `json:"status"`
+	Score            *int    `json:"score"`
+	MaxScore         int     `json:"maxScore"`
+	ScoredAt         *string `json:"scoredAt"`
+	CandidateStageID *int    `json:"candidateStageId"`
+	Link             *string `json:"link"`
+	Deadline         *string `json:"deadline"`
+	CreatedAt        *string `json:"createdAt"`
 }
 
 const (
@@ -233,32 +239,42 @@ type KanbanColumn struct {
 	Candidates []CandidateSummary `json:"candidates"`
 }
 
-// Score — выставленная оценка.
-type Score struct {
-	ID          int    `json:"id"`
-	CandidateID int    `json:"candidateId"`
-	StageID     int    `json:"stageId"`
-	Score       int    `json:"score"`
-	ScoredAt    string `json:"scoredAt"`
+// CandidateStage — прохождение кандидатом этапа.
+//
+// Score / ScoredAt — null до момента оценки (Advance / Rate).
+// Link — null пока не прикреплён.
+// Deadline — null если у этапа deadlineDays = 0.
+type CandidateStage struct {
+	ID          int     `json:"id"`
+	CandidateID int     `json:"candidateId"`
+	StageID     int     `json:"stageId"`
+	Link        *string `json:"link"`
+	Score       *int    `json:"score"`
+	ScoredAt    *string `json:"scoredAt"`
+	Deadline    *string `json:"deadline"`
+	CreatedAt   string  `json:"createdAt"`
 }
 
-func NewScore(d *db.StageScore) *Score {
+func NewCandidateStage(d *db.CandidateStage) *CandidateStage {
 	if d == nil {
 		return nil
 	}
-	return &Score{
+	return &CandidateStage{
 		ID:          d.ID,
 		CandidateID: d.CandidateID,
 		StageID:     d.StageID,
+		Link:        d.Link,
 		Score:       d.Score,
-		ScoredAt:    formatTime(d.ScoredAt),
+		ScoredAt:    formatTimePtr(d.ScoredAt),
+		Deadline:    formatTimePtr(d.Deadline),
+		CreatedAt:   formatTime(d.CreatedAt),
 	}
 }
 
 // AdvanceResult — результат перевода кандидата на следующий этап.
 type AdvanceResult struct {
-	Candidate *Candidate `json:"candidate"`
-	Score     *Score     `json:"score"`
+	Candidate      *Candidate      `json:"candidate"`
+	CandidateStage *CandidateStage `json:"candidateStage"`
 }
 
 // CandidateWithPassword carries the freshly generated password back to the

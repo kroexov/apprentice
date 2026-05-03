@@ -10,12 +10,12 @@ INSERT INTO "users" ( "login", "password", "statusId" ) VALUES ( 'admin', '$2y$1
 -- Apprentice seed: 5 этапов + 5 кандидатов с детерминированными оценками
 -- =============================================================================
 
-INSERT INTO "stages" ("stageId", "alias", "order", "title", "shortTitle", "description", "maxScore") VALUES
-	(1, 'first-project',     1, 'Первый проект',          'Проект',     'Первый учебный проект целиком', 10),
-	(2, 'word-programming',  2, 'Программирование в Word', 'Word',       'Учимся раскладывать решение по шагам — текстом',                10),
-	(3, 'first-pr',          3, 'Первый PR',              'PR',         'Первый pull request в общий репозиторий',                       10),
-	(4, 'first-readable-pr', 4, 'Первый читаемый PR',     'Чит. PR',    'PR, который можно ревьювить без боли',                          10),
-	(5, 'pet-project',       5, 'Свой пет-проект',        'Пет',        'Самостоятельный пет-проект',                                    10)
+INSERT INTO "stages" ("stageId", "alias", "order", "title", "shortTitle", "description", "maxScore", "deadlineDays") VALUES
+	(1, 'first-project',     1, 'Первый проект',          'Проект',     'Первый учебный проект целиком', 10, 14),
+	(2, 'word-programming',  2, 'Программирование в Word', 'Word',       'Учимся раскладывать решение по шагам — текстом',                10, 7),
+	(3, 'first-pr',          3, 'Первый PR',              'PR',         'Первый pull request в общий репозиторий',                       10, 7),
+	(4, 'first-readable-pr', 4, 'Первый читаемый PR',     'Чит. PR',    'PR, который можно ревьювить без боли',                          10, 14),
+	(5, 'pet-project',       5, 'Свой пет-проект',        'Пет',        'Самостоятельный пет-проект',                                    10, 30)
 ON CONFLICT ("stageId") DO NOTHING;
 
 SELECT setval('"stages_stageId_seq"', GREATEST((SELECT MAX("stageId") FROM "stages"), 1));
@@ -40,17 +40,30 @@ ON CONFLICT ("candidateId") DO NOTHING;
 
 SELECT setval('"candidates_candidateId_seq"', GREATEST((SELECT MAX("candidateId") FROM "candidates"), 1));
 
--- Оценки: за все пройденные этапы (order < currentStageId).
-INSERT INTO "stageScores" ("candidateId", "stageId", "score") VALUES
-	(1, 1, 8),
-	(1, 2, 7),
-	(2, 1, 9),
-	(2, 2, 8),
-	(2, 3, 7),
-	(2, 4, 9),
-	(4, 1, 6),
-	(4, 2, 7),
-	(4, 3, 8),
-	(5, 1, 7)
+-- candidateStages: записи о прохождении этапов.
+-- Для каждого пройденного этапа (order < currentStageId) запись содержит score/scoredAt;
+-- createdAt — момент попадания на этап, deadline вычисляется от createdAt + stages.deadlineDays.
+INSERT INTO "candidateStages" ("candidateId", "stageId", "link", "score", "scoredAt", "deadline", "createdAt") VALUES
+	(1, 1, NULL, 8, '2024-01-15 12:00:00+00', '2024-01-15 00:00:00+00', '2024-01-01 00:00:00+00'),
+	(1, 2, NULL, 7, '2024-02-10 12:00:00+00', '2024-02-08 00:00:00+00', '2024-02-01 00:00:00+00'),
+	(2, 1, NULL, 9, '2024-01-10 12:00:00+00', '2024-01-15 00:00:00+00', '2024-01-01 00:00:00+00'),
+	(2, 2, NULL, 8, '2024-02-05 12:00:00+00', '2024-02-08 00:00:00+00', '2024-02-01 00:00:00+00'),
+	(2, 3, NULL, 7, '2024-02-15 12:00:00+00', '2024-02-18 00:00:00+00', '2024-02-11 00:00:00+00'),
+	(2, 4, NULL, 9, '2024-03-10 12:00:00+00', '2024-03-15 00:00:00+00', '2024-03-01 00:00:00+00'),
+	(4, 1, NULL, 6, '2024-01-20 12:00:00+00', '2024-01-15 00:00:00+00', '2024-01-01 00:00:00+00'),
+	(4, 2, NULL, 7, '2024-02-12 12:00:00+00', '2024-02-08 00:00:00+00', '2024-02-01 00:00:00+00'),
+	(4, 3, NULL, 8, '2024-02-20 12:00:00+00', '2024-02-18 00:00:00+00', '2024-02-11 00:00:00+00'),
+	(5, 1, NULL, 7, '2024-01-12 12:00:00+00', '2024-01-15 00:00:00+00', '2024-01-01 00:00:00+00')
+ON CONFLICT ("candidateId", "stageId") DO NOTHING;
+
+-- Пустая запись для текущего этапа каждого незавершённого кандидата.
+-- deadline считаем от now() + stages.deadlineDays, чтобы при перезапуске seed
+-- незавершённые кандидаты получали актуальный дедлайн.
+INSERT INTO "candidateStages" ("candidateId", "stageId", "deadline")
+SELECT c."candidateId", c."currentStageId",
+	CASE WHEN s."deadlineDays" > 0 THEN now() + (s."deadlineDays" * interval '1 day') ELSE NULL END
+FROM "candidates" c
+JOIN "stages" s ON s."stageId" = c."currentStageId"
+WHERE c."completedAt" IS NULL AND c."statusId" <> 3
 ON CONFLICT ("candidateId", "stageId") DO NOTHING;
 

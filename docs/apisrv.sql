@@ -136,7 +136,7 @@ ALTER TABLE "vfsFolders" ADD CONSTRAINT "vfsFolders_statusId_fkey" FOREIGN KEY (
 	NOT DEFERRABLE;
 
 -- =============================================================================
--- Apprentice domain: stages, candidates, stageScores
+-- Apprentice domain: stages, candidates, candidateStages
 -- =============================================================================
 
 CREATE TABLE "stages" (
@@ -147,9 +147,11 @@ CREATE TABLE "stages" (
 	"shortTitle" varchar(64) NOT NULL,
 	"description" text NOT NULL DEFAULT '',
 	"maxScore" int4 NOT NULL DEFAULT 10,
+	"deadlineDays" int4 NOT NULL DEFAULT 0,
 	"statusId" int4 NOT NULL DEFAULT 1,
 	CONSTRAINT "stages_pkey" PRIMARY KEY ("stageId"),
 	CONSTRAINT "stages_maxScore_check" CHECK ("maxScore" > 0 AND "maxScore" <= 100),
+	CONSTRAINT "stages_deadlineDays_check" CHECK ("deadlineDays" >= 0 AND "deadlineDays" <= 365),
 	CONSTRAINT "stages_alias_check" CHECK ("alias" ~ '^[a-z0-9.\-_]{2,64}$')
 );
 
@@ -200,19 +202,24 @@ CREATE INDEX "IX_candidates_authKey" ON "candidates" ("authKey") WHERE "authKey"
 CREATE INDEX "IX_candidates_currentStageId" ON "candidates" USING BTREE ("currentStageId");
 CREATE INDEX "IX_candidates_statusId" ON "candidates" USING BTREE ("statusId");
 
-CREATE TABLE "stageScores" (
-	"scoreId" SERIAL NOT NULL,
+CREATE TABLE "candidateStages" (
+	"candidateStageId" SERIAL NOT NULL,
 	"candidateId" int4 NOT NULL,
 	"stageId" int4 NOT NULL,
-	"score" int2 NOT NULL,
-	"scoredAt" timestamp with time zone NOT NULL DEFAULT now(),
-	CONSTRAINT "stageScores_pkey" PRIMARY KEY ("scoreId"),
-	CONSTRAINT "stageScores_candidate_stage_key" UNIQUE ("candidateId", "stageId"),
-	CONSTRAINT "stageScores_score_check" CHECK ("score" >= 1 AND "score" <= 100)
+	"link" text,
+	"score" int2,
+	"scoredAt" timestamp with time zone,
+	"scoredBy" int4,
+	"deadline" timestamp with time zone,
+	"createdAt" timestamp with time zone NOT NULL DEFAULT now(),
+	CONSTRAINT "candidateStages_pkey" PRIMARY KEY ("candidateStageId"),
+	CONSTRAINT "candidateStages_candidate_stage_key" UNIQUE ("candidateId", "stageId"),
+	CONSTRAINT "candidateStages_score_check" CHECK ("score" IS NULL OR ("score" >= 1 AND "score" <= 100)),
+	CONSTRAINT "candidateStages_scored_consistency_check" CHECK (("score" IS NULL AND "scoredAt" IS NULL) OR ("score" IS NOT NULL AND "scoredAt" IS NOT NULL))
 );
 
-CREATE INDEX "IX_stageScores_candidateId" ON "stageScores" USING BTREE ("candidateId");
-CREATE INDEX "IX_stageScores_stageId" ON "stageScores" USING BTREE ("stageId");
+CREATE INDEX "IX_candidateStages_candidateId" ON "candidateStages" USING BTREE ("candidateId");
+CREATE INDEX "IX_candidateStages_stageId" ON "candidateStages" USING BTREE ("stageId");
 
 ALTER TABLE "stages" ADD CONSTRAINT "stages_statusId_fkey" FOREIGN KEY ("statusId")
 	REFERENCES "statuses"("statusId")
@@ -226,12 +233,16 @@ ALTER TABLE "candidates" ADD CONSTRAINT "candidates_statusId_fkey" FOREIGN KEY (
 	REFERENCES "statuses"("statusId")
 	MATCH SIMPLE ON DELETE RESTRICT ON UPDATE RESTRICT NOT DEFERRABLE;
 
-ALTER TABLE "stageScores" ADD CONSTRAINT "stageScores_candidateId_fkey" FOREIGN KEY ("candidateId")
+ALTER TABLE "candidateStages" ADD CONSTRAINT "candidateStages_candidateId_fkey" FOREIGN KEY ("candidateId")
 	REFERENCES "candidates"("candidateId")
 	MATCH SIMPLE ON DELETE CASCADE ON UPDATE RESTRICT NOT DEFERRABLE;
 
-ALTER TABLE "stageScores" ADD CONSTRAINT "stageScores_stageId_fkey" FOREIGN KEY ("stageId")
+ALTER TABLE "candidateStages" ADD CONSTRAINT "candidateStages_stageId_fkey" FOREIGN KEY ("stageId")
 	REFERENCES "stages"("stageId")
 	MATCH SIMPLE ON DELETE RESTRICT ON UPDATE RESTRICT NOT DEFERRABLE;
+
+ALTER TABLE "candidateStages" ADD CONSTRAINT "candidateStages_scoredBy_fkey" FOREIGN KEY ("scoredBy")
+	REFERENCES "users"("userId")
+	MATCH SIMPLE ON DELETE SET NULL ON UPDATE RESTRICT NOT DEFERRABLE;
 
 

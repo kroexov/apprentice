@@ -42,7 +42,7 @@ func resetApprenticeDB(t *testing.T, dbo db.DB) {
 	t.Helper()
 	ctx := t.Context()
 	stmts := []string{
-		`TRUNCATE TABLE "stageScores" RESTART IDENTITY CASCADE`,
+		`TRUNCATE TABLE "candidateStages" RESTART IDENTITY CASCADE`,
 		`DELETE FROM "candidates"`,
 		`ALTER SEQUENCE "candidates_candidateId_seq" RESTART WITH 1`,
 		`DELETE FROM "stages"`,
@@ -356,8 +356,9 @@ func TestDB_CandidateService_Advance(t *testing.T) {
 			res, err := f.candidate.Advance(ctx, c.ID, 7)
 			So(err, ShouldBeNil)
 			So(res, ShouldNotBeNil)
-			So(res.Score.Score, ShouldEqual, 7)
-			So(res.Score.StageID, ShouldEqual, stages[0].ID)
+			So(res.CandidateStage.Score, ShouldNotBeNil)
+			So(*res.CandidateStage.Score, ShouldEqual, 7)
+			So(res.CandidateStage.StageID, ShouldEqual, stages[0].ID)
 			So(res.Candidate.CurrentStageID, ShouldEqual, stages[1].ID)
 			So(res.Candidate.CompletedAt, ShouldBeNil)
 		})
@@ -377,8 +378,9 @@ func TestDB_CandidateService_Advance(t *testing.T) {
 			_, err := f.candidate.Advance(ctx, c.ID, 5)
 			So(err, ShouldBeNil)
 
-			// Force the candidate back to stage 1 to trigger a (cand,stage) conflict
-			// without going through Rollback (which would delete the score first).
+			// Force the candidate back to stage 1 (which already has a scored
+			// CandidateStage row) to trigger the "already scored" guard without
+			// going through Rollback.
 			cur, _ := f.repo.CandidateByID(ctx, c.ID)
 			cur.CurrentStageID = stages[0].ID
 			_, _ = f.repo.UpdateCandidate(ctx, cur, db.WithColumns(db.Columns.Candidate.CurrentStageID))
@@ -409,21 +411,22 @@ func TestDB_CandidateService_Advance(t *testing.T) {
 
 		Convey("Rate: corrects an existing score", func() {
 			res, _ := f.candidate.Advance(ctx, c.ID, 5)
-			updated, err := f.candidate.Rate(ctx, res.Score.ID, 9)
+			updated, err := f.candidate.Rate(ctx, res.CandidateStage.ID, 9)
 			So(err, ShouldBeNil)
-			So(updated.Score, ShouldEqual, 9)
-			So(updated.StageID, ShouldEqual, res.Score.StageID)
+			So(updated.Score, ShouldNotBeNil)
+			So(*updated.Score, ShouldEqual, 9)
+			So(updated.StageID, ShouldEqual, res.CandidateStage.StageID)
 		})
 
 		Convey("Rate: rejects out-of-range", func() {
 			res, _ := f.candidate.Advance(ctx, c.ID, 5)
-			_, err := f.candidate.Rate(ctx, res.Score.ID, 999)
+			_, err := f.candidate.Rate(ctx, res.CandidateStage.ID, 999)
 			So(err, ShouldEqual, ErrScoreOutOfRange)
 		})
 
-		Convey("Rate: 404 for unknown score", func() {
+		Convey("Rate: 404 for unknown candidateStageId", func() {
 			_, err := f.candidate.Rate(ctx, 999, 5)
-			So(err, ShouldEqual, ErrScoreNotFound)
+			So(err, ShouldEqual, ErrCandidateStageNotFound)
 		})
 
 		Convey("Rollback: deletes latest score and moves back", func() {

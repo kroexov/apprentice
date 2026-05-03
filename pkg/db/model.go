@@ -27,13 +27,13 @@ var Columns = struct {
 
 		CurrentStage string
 	}
-	StageScore struct {
-		ID, CandidateID, StageID, Score, ScoredAt string
+	CandidateStage struct {
+		ID, CandidateID, StageID, Link, Score, ScoredAt, ScoredBy, Deadline, CreatedAt string
 
 		Candidate, Stage string
 	}
 	Stage struct {
-		ID, Alias, Order, Title, ShortTitle, Description, MaxScore, StatusID string
+		ID, Alias, Order, Title, ShortTitle, Description, MaxScore, DeadlineDays, StatusID string
 	}
 }{
 	User: struct {
@@ -108,31 +108,36 @@ var Columns = struct {
 
 		CurrentStage: "CurrentStage",
 	},
-	StageScore: struct {
-		ID, CandidateID, StageID, Score, ScoredAt string
+	CandidateStage: struct {
+		ID, CandidateID, StageID, Link, Score, ScoredAt, ScoredBy, Deadline, CreatedAt string
 
 		Candidate, Stage string
 	}{
-		ID:          "scoreId",
+		ID:          "candidateStageId",
 		CandidateID: "candidateId",
 		StageID:     "stageId",
+		Link:        "link",
 		Score:       "score",
 		ScoredAt:    "scoredAt",
+		ScoredBy:    "scoredBy",
+		Deadline:    "deadline",
+		CreatedAt:   "createdAt",
 
 		Candidate: "Candidate",
 		Stage:     "Stage",
 	},
 	Stage: struct {
-		ID, Alias, Order, Title, ShortTitle, Description, MaxScore, StatusID string
+		ID, Alias, Order, Title, ShortTitle, Description, MaxScore, DeadlineDays, StatusID string
 	}{
-		ID:          "stageId",
-		Alias:       "alias",
-		Order:       "order",
-		Title:       "title",
-		ShortTitle:  "shortTitle",
-		Description: "description",
-		MaxScore:    "maxScore",
-		StatusID:    "statusId",
+		ID:           "stageId",
+		Alias:        "alias",
+		Order:        "order",
+		Title:        "title",
+		ShortTitle:   "shortTitle",
+		Description:  "description",
+		MaxScore:     "maxScore",
+		DeadlineDays: "deadlineDays",
+		StatusID:     "statusId",
 	},
 }
 
@@ -149,7 +154,7 @@ var Tables = struct {
 	Candidate struct {
 		Name, Alias string
 	}
-	StageScore struct {
+	CandidateStage struct {
 		Name, Alias string
 	}
 	Stage struct {
@@ -180,10 +185,10 @@ var Tables = struct {
 		Name:  "candidates",
 		Alias: "t",
 	},
-	StageScore: struct {
+	CandidateStage: struct {
 		Name, Alias string
 	}{
-		Name:  "stageScores",
+		Name:  "candidateStages",
 		Alias: "t",
 	},
 	Stage: struct {
@@ -264,14 +269,18 @@ type Candidate struct {
 	CurrentStage *Stage `pg:"fk:currentStageId,rel:has-one"`
 }
 
-type StageScore struct {
-	tableName struct{} `pg:"stageScores,alias:t,discard_unknown_columns"`
+type CandidateStage struct {
+	tableName struct{} `pg:"candidateStages,alias:t,discard_unknown_columns"`
 
-	ID          int       `pg:"scoreId,pk"`
-	CandidateID int       `pg:"candidateId,use_zero"`
-	StageID     int       `pg:"stageId,use_zero"`
-	Score       int       `pg:"score,use_zero"`
-	ScoredAt    time.Time `pg:"scoredAt,use_zero"`
+	ID          int        `pg:"candidateStageId,pk"`
+	CandidateID int        `pg:"candidateId,use_zero"`
+	StageID     int        `pg:"stageId,use_zero"`
+	Link        *string    `pg:"link"`
+	Score       *int       `pg:"score"`
+	ScoredAt    *time.Time `pg:"scoredAt"`
+	ScoredBy    *int       `pg:"scoredBy"`
+	Deadline    *time.Time `pg:"deadline"`
+	CreatedAt   time.Time  `pg:"createdAt,use_zero"`
 
 	Candidate *Candidate `pg:"fk:candidateId,rel:has-one"`
 	Stage     *Stage     `pg:"fk:stageId,rel:has-one"`
@@ -280,12 +289,13 @@ type StageScore struct {
 type Stage struct {
 	tableName struct{} `pg:"stages,alias:t,discard_unknown_columns"`
 
-	ID          int    `pg:"stageId,pk"`
-	Alias       string `pg:"alias,use_zero"`
-	Order       int    `pg:"order,use_zero"`
-	Title       string `pg:"title,use_zero"`
-	ShortTitle  string `pg:"shortTitle,use_zero"`
-	Description string `pg:"description,use_zero"`
-	MaxScore    int    `pg:"maxScore,use_zero"`
-	StatusID    int    `pg:"statusId,use_zero"`
+	ID           int    `pg:"stageId,pk"`
+	Alias        string `pg:"alias,use_zero"`
+	Order        int    `pg:"order,use_zero"`
+	Title        string `pg:"title,use_zero"`
+	ShortTitle   string `pg:"shortTitle,use_zero"`
+	Description  string `pg:"description,use_zero"`
+	MaxScore     int    `pg:"maxScore,use_zero"`
+	DeadlineDays int    `pg:"deadlineDays,use_zero"`
+	StatusID     int    `pg:"statusId,use_zero"`
 }

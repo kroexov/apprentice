@@ -8,7 +8,7 @@
     <TableMapping>
         <common>users</common>
         <vfs>vfsFiles,vfsFolders</vfs>
-        <apprentice>stages,candidates,stageScores</apprentice>
+        <apprentice>stages,candidates,candidateStages</apprentice>
     </TableMapping>
     <Languages>
         <string>ru</string>

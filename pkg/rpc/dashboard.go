@@ -36,7 +36,7 @@ func (s DashboardService) Summary(ctx context.Context) (*Summary, error) {
 	if err != nil {
 		return nil, InternalError(err)
 	}
-	scores, err := s.repo.StageScoresByFilters(ctx, nil, db.PagerNoLimit, db.WithColumns(db.TableColumns))
+	cstages, err := s.repo.CandidateStagesByFilters(ctx, nil, db.PagerNoLimit, db.WithColumns(db.TableColumns))
 	if err != nil {
 		return nil, InternalError(err)
 	}
@@ -47,8 +47,10 @@ func (s DashboardService) Summary(ctx context.Context) (*Summary, error) {
 	}
 
 	totalPoints := 0
-	for _, sc := range scores {
-		totalPoints += sc.Score
+	for _, cs := range cstages {
+		if cs.Score != nil {
+			totalPoints += *cs.Score
+		}
 	}
 
 	stageOrder := make(map[int]int, len(stages))

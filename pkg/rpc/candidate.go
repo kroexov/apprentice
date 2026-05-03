@@ -6,8 +6,10 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -21,15 +23,19 @@ import (
 )
 
 var (
-	ErrCandidateNotFound   = zenrpc.NewStringError(http.StatusNotFound, "candidate not found")
-	ErrAlreadyScored       = zenrpc.NewStringError(http.StatusBadRequest, "stage already scored for this candidate")
-	ErrAlreadyCompleted    = zenrpc.NewStringError(http.StatusBadRequest, "candidate already completed all stages")
-	ErrScoreOutOfRange     = zenrpc.NewStringError(http.StatusBadRequest, "score out of range")
-	ErrCannotRollback      = zenrpc.NewStringError(http.StatusBadRequest, "no previous stage to roll back to")
-	ErrScoreNotFound       = zenrpc.NewStringError(http.StatusNotFound, "score not found")
-	ErrInvalidCurrentStage = zenrpc.NewStringError(http.StatusBadRequest, "currentStageId references unknown stage")
-	ErrHandleTaken         = zenrpc.NewStringError(http.StatusBadRequest, "handle is already taken")
+	ErrCandidateNotFound      = zenrpc.NewStringError(http.StatusNotFound, "candidate not found")
+	ErrCandidateStageNotFound = zenrpc.NewStringError(http.StatusNotFound, "candidate stage not found")
+	ErrAlreadyScored          = zenrpc.NewStringError(http.StatusBadRequest, "stage already scored for this candidate")
+	ErrAlreadyCompleted       = zenrpc.NewStringError(http.StatusBadRequest, "candidate already completed all stages")
+	ErrScoreOutOfRange        = zenrpc.NewStringError(http.StatusBadRequest, "score out of range")
+	ErrCannotRollback         = zenrpc.NewStringError(http.StatusBadRequest, "no previous stage to roll back to")
+	ErrInvalidCurrentStage    = zenrpc.NewStringError(http.StatusBadRequest, "currentStageId references unknown stage")
+	ErrHandleTaken            = zenrpc.NewStringError(http.StatusBadRequest, "handle is already taken")
+	ErrForbidden              = zenrpc.NewStringError(http.StatusForbidden, "forbidden")
+	ErrLinkInvalid            = zenrpc.NewStringError(http.StatusBadRequest, "link is not a valid http(s) URL")
 )
+
+const candidateStageLinkMaxLen = 2048
 
 var candidateHandleRegex = regexp.MustCompile(`^[a-z0-9.\-_]{2,40}$`)
 
@@ -87,15 +93,15 @@ func (s CandidateService) GetByID(ctx context.Context, id int) (*CandidateDetail
 	if err != nil {
 		return nil, InternalError(err)
 	}
-	scores, err := s.repo.StageScoresByFilters(ctx, &db.StageScoreSearch{CandidateID: &id}, db.PagerNoLimit,
+	cstages, err := s.repo.CandidateStagesByFilters(ctx, &db.CandidateStageSearch{CandidateID: &id}, db.PagerNoLimit,
 		db.WithColumns(db.TableColumns))
 	if err != nil {
 		return nil, InternalError(err)
 	}
 
-	summary := buildSummaryFor(cand, stages, scores, totalsFromStages(stages))
+	summary := buildSummaryFor(cand, stages, cstages, totalsFromStages(stages))
 	currentStage := findStage(stages, cand.CurrentStageID)
-	scoreByStage := indexScores(scores)
+	csByStage := indexCandidateStages(cstages)
 
 	history := make([]CandidateStageHistory, 0, len(stages))
 	for i := range stages {
@@ -105,17 +111,23 @@ func (s CandidateService) GetByID(ctx context.Context, id int) (*CandidateDetail
 			Stage:    NewStage(st),
 			MaxScore: st.MaxScore,
 		}
-		if sc, ok := scoreByStage[st.ID]; ok {
+		cs, hasRow := csByStage[st.ID]
+		switch {
+		case hasRow && cs.Score != nil:
 			row.Status = StageStatusDone
-			score := sc.Score
-			row.Score = &score
-			scoredAt := sc.ScoredAt.Format(time.RFC3339)
-			row.ScoredAt = &scoredAt
-			scoreID := sc.ID
-			row.ScoreID = &scoreID
-		} else if cand.CompletedAt == nil && currentStage != nil && st.ID == currentStage.ID {
+			row.Score = cs.Score
+			row.ScoredAt = formatTimePtr(cs.ScoredAt)
+			row.CandidateStageID = &cs.ID
+			row.Link = cs.Link
+			row.Deadline = formatTimePtr(cs.Deadline)
+			row.CreatedAt = ptrString(cs.CreatedAt.Format(time.RFC3339))
+		case hasRow && cand.CompletedAt == nil && currentStage != nil && st.ID == currentStage.ID:
 			row.Status = StageStatusCurrent
-		} else {
+			row.CandidateStageID = &cs.ID
+			row.Link = cs.Link
+			row.Deadline = formatTimePtr(cs.Deadline)
+			row.CreatedAt = ptrString(cs.CreatedAt.Format(time.RFC3339))
+		default:
 			row.Status = StageStatusTodo
 		}
 		history = append(history, row)
@@ -172,6 +184,10 @@ func (s CandidateService) Add(ctx context.Context, candidate Candidate) (*Candid
 			return txErr
 		}
 
+		if _, txErr = txRepo.CreateCandidateStage(ctx, created.ID, stage); txErr != nil {
+			return txErr
+		}
+
 		full, txErr = txRepo.CandidateByID(ctx, created.ID, txRepo.FullCandidate())
 		return txErr
 	})
@@ -190,6 +206,32 @@ func (s CandidateService) Add(ctx context.Context, candidate Candidate) (*Candid
 	}, nil
 }
 
+// advanceFinalize runs the post-score half of Advance: either set completedAt
+// (last stage) or create the next CandidateStage and bump CurrentStageID.
+func advanceFinalize(ctx context.Context, txRepo db.ApprenticeRepo, cand *db.Candidate, stage *db.Stage, now time.Time) error {
+	next, err := txRepo.NextStageAfter(ctx, stage.Order)
+	if err != nil {
+		return err
+	}
+	cand.UpdatedAt = now
+	if next == nil {
+		cand.CompletedAt = &now
+		_, err = txRepo.UpdateCandidate(ctx, cand,
+			db.WithColumns(db.Columns.Candidate.CompletedAt, db.Columns.Candidate.UpdatedAt))
+		return err
+	}
+	if _, e := txRepo.CreateCandidateStage(ctx, cand.ID, next); e != nil {
+		if db.IsUniqueViolation(e) {
+			return ErrAlreadyScored
+		}
+		return e
+	}
+	cand.CurrentStageID = next.ID
+	_, err = txRepo.UpdateCandidate(ctx, cand,
+		db.WithColumns(db.Columns.Candidate.CurrentStageID, db.Columns.Candidate.UpdatedAt))
+	return err
+}
+
 // generateInitialPassword returns a random 12-char URL-safe password used by
 // candidate.Add. Surfaced once in the response — never stored client-side.
 func generateInitialPassword() string {
@@ -201,6 +243,10 @@ func generateInitialPassword() string {
 }
 
 // Update changes candidate's basic fields. Use Advance/Rollback for stage progression.
+//
+// `login` is intentionally not updatable here — it's the credential identity
+// and the client doesn't have a meaningful place to source it from. Anything
+// passed in `candidate.login` is ignored.
 //
 //zenrpc:candidate Candidate
 //zenrpc:return bool
@@ -228,7 +274,6 @@ func (s CandidateService) Update(ctx context.Context, candidate Candidate) (bool
 		patch := candidate.ToDB()
 		cur.Name = patch.Name
 		cur.Handle = patch.Handle
-		cur.Login = patch.Login
 		cur.City = patch.City
 		cur.Age = patch.Age
 		cur.Bio = patch.Bio
@@ -242,7 +287,6 @@ func (s CandidateService) Update(ctx context.Context, candidate Candidate) (bool
 		ok, err = txRepo.UpdateCandidate(ctx, cur, db.WithColumns(
 			db.Columns.Candidate.Name,
 			db.Columns.Candidate.Handle,
-			db.Columns.Candidate.Login,
 			db.Columns.Candidate.City,
 			db.Columns.Candidate.Age,
 			db.Columns.Candidate.Bio,
@@ -296,6 +340,9 @@ func (s CandidateService) Delete(ctx context.Context, id int) (bool, error) {
 // Advance scores the candidate for their current stage and moves them to the next one.
 // If current stage is the last, completedAt is set instead.
 //
+// Updates the existing empty CandidateStage row for the current stage with
+// score/scoredAt; on transition, creates a new empty row for the next stage.
+//
 //zenrpc:candidateId int
 //zenrpc:score int
 //zenrpc:return AdvanceResult
@@ -304,8 +351,8 @@ func (s CandidateService) Delete(ctx context.Context, id int) (bool, error) {
 //zenrpc:500 Internal Error
 func (s CandidateService) Advance(ctx context.Context, candidateID, score int) (*AdvanceResult, error) {
 	var (
-		outCand  *db.Candidate
-		outScore *db.StageScore
+		outCand *db.Candidate
+		outCS   *db.CandidateStage
 	)
 
 	err := s.dbo.RunInTransaction(ctx, func(tx *pg.Tx) error {
@@ -333,39 +380,34 @@ func (s CandidateService) Advance(ctx context.Context, candidateID, score int) (
 			return ErrScoreOutOfRange
 		}
 
-		ss := &db.StageScore{
-			CandidateID: cand.ID,
-			StageID:     stage.ID,
-			Score:       score,
-			ScoredAt:    time.Now(),
-		}
-		if _, addErr := txRepo.AddStageScore(ctx, ss); addErr != nil {
-			if db.IsUniqueViolation(addErr) {
-				return ErrAlreadyScored
-			}
-			return addErr
-		}
-		outScore = ss
-
-		next, err := txRepo.NextStageAfter(ctx, stage.Order)
+		cur, err := txRepo.OneCandidateStage(ctx, &db.CandidateStageSearch{
+			CandidateID: &cand.ID,
+			StageID:     &stage.ID,
+		})
 		if err != nil {
 			return err
 		}
+		if cur == nil {
+			// Invariant violation: every non-completed candidate must have an
+			// empty row for currentStageId. If it's missing (legacy data, manual
+			// SQL, etc.) reject loudly rather than silently inserting.
+			return ErrCandidateStageNotFound
+		}
+		if cur.Score != nil {
+			return ErrAlreadyScored
+		}
 
 		now := time.Now()
-		cand.UpdatedAt = now
-		if next == nil {
-			cand.CompletedAt = &now
-			if _, err := txRepo.UpdateCandidate(ctx, cand,
-				db.WithColumns(db.Columns.Candidate.CompletedAt, db.Columns.Candidate.UpdatedAt)); err != nil {
-				return err
-			}
-		} else {
-			cand.CurrentStageID = next.ID
-			if _, err := txRepo.UpdateCandidate(ctx, cand,
-				db.WithColumns(db.Columns.Candidate.CurrentStageID, db.Columns.Candidate.UpdatedAt)); err != nil {
-				return err
-			}
+		cur.Score = &score
+		cur.ScoredAt = &now
+		if _, e := txRepo.UpdateCandidateStage(ctx, cur,
+			db.WithColumns(db.Columns.CandidateStage.Score, db.Columns.CandidateStage.ScoredAt)); e != nil {
+			return e
+		}
+		outCS = cur
+
+		if e := advanceFinalize(ctx, txRepo, cand, stage, now); e != nil {
+			return e
 		}
 		outCand = cand
 		return nil
@@ -384,31 +426,33 @@ func (s CandidateService) Advance(ctx context.Context, candidateID, score int) (
 	}
 	s.Print(ctx, "candidate advanced",
 		"candidateId", outCand.ID,
-		"stageId", outScore.StageID,
-		"score", outScore.Score,
+		"stageId", outCS.StageID,
+		"score", *outCS.Score,
 		"completed", outCand.CompletedAt != nil,
 	)
 	return &AdvanceResult{
-		Candidate: NewCandidate(full),
-		Score:     NewScore(outScore),
+		Candidate:      NewCandidate(full),
+		CandidateStage: NewCandidateStage(outCS),
 	}, nil
 }
 
-// Rate corrects an existing score without changing the candidate's current stage.
+// Rate sets or corrects the score on an existing CandidateStage row without
+// changing the candidate's current stage. ScoredAt is set to now() if it was
+// previously NULL; otherwise preserved.
 //
-//zenrpc:scoreId int
+//zenrpc:candidateStageId int
 //zenrpc:score int
-//zenrpc:return Score
+//zenrpc:return CandidateStage
 //zenrpc:400 Validation Error
 //zenrpc:404 Not Found
 //zenrpc:500 Internal Error
-func (s CandidateService) Rate(ctx context.Context, scoreID, score int) (*Score, error) {
-	cur, err := s.repo.StageScoreByID(ctx, scoreID, s.repo.FullStageScore())
+func (s CandidateService) Rate(ctx context.Context, candidateStageID, score int) (*CandidateStage, error) {
+	cur, err := s.repo.CandidateStageByID(ctx, candidateStageID, s.repo.FullCandidateStage())
 	if err != nil {
 		return nil, InternalError(err)
 	}
 	if cur == nil {
-		return nil, ErrScoreNotFound
+		return nil, ErrCandidateStageNotFound
 	}
 
 	stage, err := s.repo.StageByID(ctx, cur.StageID)
@@ -422,16 +466,29 @@ func (s CandidateService) Rate(ctx context.Context, scoreID, score int) (*Score,
 		return nil, ErrScoreOutOfRange
 	}
 
-	cur.Score = score
-	if _, err := s.repo.UpdateStageScore(ctx, cur, db.WithColumns(db.Columns.StageScore.Score)); err != nil {
+	cur.Score = &score
+	if cur.ScoredAt == nil {
+		now := time.Now()
+		cur.ScoredAt = &now
+	}
+	if _, err := s.repo.UpdateCandidateStage(ctx, cur,
+		db.WithColumns(db.Columns.CandidateStage.Score, db.Columns.CandidateStage.ScoredAt)); err != nil {
 		return nil, InternalError(err)
 	}
-	s.Print(ctx, "score corrected", "scoreId", cur.ID, "candidateId", cur.CandidateID, "stageId", cur.StageID, "score", score)
-	return NewScore(cur), nil
+	s.Print(ctx, "candidate stage rated",
+		"candidateStageId", cur.ID, "candidateId", cur.CandidateID, "stageId", cur.StageID, "score", score)
+	return NewCandidateStage(cur), nil
 }
 
-// Rollback removes the candidate's most recent score and moves them one stage back.
-// If the candidate was completed, completedAt is cleared.
+// Rollback reverts the candidate's most recent Advance:
+//   - For an in-progress candidate: deletes the empty CandidateStage of the
+//     current stage and clears score/scoredAt on the previously scored row,
+//     leaving the candidate "on" the previous stage with no score.
+//   - For a completed candidate: clears completedAt and clears score/scoredAt
+//     on the last scored row (which is also the current stage row, no empty
+//     row to delete).
+//
+// Deadline on the row that becomes "current" is left unchanged.
 //
 //zenrpc:candidateId int
 //zenrpc:return Candidate
@@ -452,14 +509,35 @@ func (s CandidateService) Rollback(ctx context.Context, candidateID int) (*Candi
 			return ErrCandidateNotFound
 		}
 
-		latest, err := txRepo.LatestStageScoreByCandidate(ctx, cand.ID)
+		latest, err := txRepo.LatestScoredCandidateStageByCandidate(ctx, cand.ID)
 		if err != nil {
 			return err
 		}
 		if latest == nil {
 			return ErrCannotRollback
 		}
-		if _, err := txRepo.DeleteStageScore(ctx, latest.ID); err != nil {
+
+		if cand.CompletedAt == nil {
+			// Drop the empty current-stage row to satisfy the
+			// "exactly one empty row" invariant after rollback.
+			cur, err := txRepo.OneCandidateStage(ctx, &db.CandidateStageSearch{
+				CandidateID: &cand.ID,
+				StageID:     &cand.CurrentStageID,
+			})
+			if err != nil {
+				return err
+			}
+			if cur != nil && cur.ID != latest.ID {
+				if _, err := txRepo.DeleteCandidateStage(ctx, cur.ID); err != nil {
+					return err
+				}
+			}
+		}
+
+		latest.Score = nil
+		latest.ScoredAt = nil
+		if _, err := txRepo.UpdateCandidateStage(ctx, latest,
+			db.WithColumns(db.Columns.CandidateStage.Score, db.Columns.CandidateStage.ScoredAt)); err != nil {
 			return err
 		}
 
@@ -488,6 +566,81 @@ func (s CandidateService) Rollback(ctx context.Context, candidateID int) (*Candi
 	}
 	s.Print(ctx, "candidate rolled back", "candidateId", out.ID, "stageId", out.CurrentStageID)
 	return NewCandidate(full), nil
+}
+
+// SetLink attaches or detaches the link on a CandidateStage.
+//
+// Auth: requires admin OR candidate principal (registered tier in middleware).
+// Admin can set any candidateStage; candidate may only set rows where
+// candidateId matches their own. Anonymous requests are rejected by middleware.
+//
+// link == nil or empty/whitespace clears the link (detach).
+// Otherwise the link is validated as a http(s) URL no longer than 2048 chars.
+//
+//zenrpc:candidateStageId int
+//zenrpc:link *string
+//zenrpc:return CandidateStage
+//zenrpc:401 Unauthorized
+//zenrpc:403 Forbidden
+//zenrpc:404 Not Found
+//zenrpc:400 Validation Error
+//zenrpc:500 Internal Error
+func (s CandidateService) SetLink(ctx context.Context, candidateStageID int, link *string) (*CandidateStage, error) {
+	admin := AdminFromContext(ctx)
+	cand := CandidateFromContext(ctx)
+	if admin == nil && cand == nil {
+		return nil, ErrUnauthorized
+	}
+
+	cur, err := s.repo.CandidateStageByID(ctx, candidateStageID, s.repo.FullCandidateStage())
+	if err != nil {
+		return nil, InternalError(err)
+	}
+	if cur == nil {
+		return nil, ErrCandidateStageNotFound
+	}
+	if admin == nil && cur.CandidateID != cand.ID {
+		return nil, ErrForbidden
+	}
+
+	normalized, err := normalizeLink(link)
+	if err != nil {
+		return nil, err
+	}
+	cur.Link = normalized
+	if _, err := s.repo.UpdateCandidateStage(ctx, cur, db.WithColumns(db.Columns.CandidateStage.Link)); err != nil {
+		return nil, InternalError(err)
+	}
+	s.Print(ctx, "candidate stage link set",
+		"candidateStageId", cur.ID, "candidateId", cur.CandidateID, "stageId", cur.StageID,
+		"detached", normalized == nil)
+	return NewCandidateStage(cur), nil
+}
+
+// normalizeLink returns nil for nil/empty/whitespace input (detach), otherwise
+// validates the trimmed value is a http(s) URL no longer than candidateStageLinkMaxLen.
+func normalizeLink(link *string) (*string, error) {
+	if link == nil {
+		return nil, nil
+	}
+	v := strings.TrimSpace(*link)
+	if v == "" {
+		return nil, nil
+	}
+	if len(v) > candidateStageLinkMaxLen {
+		return nil, ErrLinkInvalid
+	}
+	u, err := url.Parse(v)
+	if err != nil {
+		return nil, ErrLinkInvalid
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return nil, ErrLinkInvalid
+	}
+	if u.Host == "" {
+		return nil, ErrLinkInvalid
+	}
+	return &v, nil
 }
 
 // Kanban returns candidates grouped by their current stage.
@@ -521,7 +674,7 @@ func (s CandidateService) Kanban(ctx context.Context) ([]KanbanColumn, error) {
 	return cols, nil
 }
 
-func (s CandidateService) loadAggregateInputs(ctx context.Context) ([]db.Stage, []db.Candidate, []db.StageScore, error) {
+func (s CandidateService) loadAggregateInputs(ctx context.Context) ([]db.Stage, []db.Candidate, []db.CandidateStage, error) {
 	stages, err := s.repo.StagesByFilters(ctx, nil, db.PagerNoLimit, s.repo.FullStage())
 	if err != nil {
 		return nil, nil, nil, InternalError(err)
@@ -530,11 +683,11 @@ func (s CandidateService) loadAggregateInputs(ctx context.Context) ([]db.Stage, 
 	if err != nil {
 		return nil, nil, nil, InternalError(err)
 	}
-	scores, err := s.repo.StageScoresByFilters(ctx, nil, db.PagerNoLimit, db.WithColumns(db.TableColumns))
+	cstages, err := s.repo.CandidateStagesByFilters(ctx, nil, db.PagerNoLimit, db.WithColumns(db.TableColumns))
 	if err != nil {
 		return nil, nil, nil, InternalError(err)
 	}
-	return stages, candidates, scores, nil
+	return stages, candidates, cstages, nil
 }
 
 func (s CandidateService) isValid(ctx context.Context, c Candidate, isUpdate bool) Validator {
@@ -554,13 +707,18 @@ func (s CandidateService) isValid(ctx context.Context, c Candidate, isUpdate boo
 	case !candidateHandleRegex.MatchString(c.Handle):
 		v.Append("handle", FieldErrorFormat)
 	}
-	switch {
-	case c.Login == "":
-		v.Append("login", FieldErrorRequired)
-	case utf8.RuneCountInString(c.Login) > 64:
-		v.AppendMax("login", 64)
-	case !candidateHandleRegex.MatchString(c.Login):
-		v.Append("login", FieldErrorFormat)
+	// Login is validated only on Add. Update ignores `candidate.login`
+	// entirely (immutable field — see Update doc-comment), so we don't want
+	// stale/empty values from the client to fail validation here.
+	if !isUpdate {
+		switch {
+		case c.Login == "":
+			v.Append("login", FieldErrorRequired)
+		case utf8.RuneCountInString(c.Login) > 64:
+			v.AppendMax("login", 64)
+		case !candidateHandleRegex.MatchString(c.Login):
+			v.Append("login", FieldErrorFormat)
+		}
 	}
 	if utf8.RuneCountInString(c.City) > 128 {
 		v.AppendMax("city", 128)
@@ -603,8 +761,9 @@ func (s CandidateService) isValid(ctx context.Context, c Candidate, isUpdate boo
 	return v
 }
 
-// checkCandidateUniqueness fills uniqueness errors for handle/login. Pulled out
-// of isValid solely to keep cyclomatic complexity below the linter cap.
+// checkCandidateUniqueness fills uniqueness errors for handle and (on Add only)
+// login. Pulled out of isValid solely to keep cyclomatic complexity below the
+// linter cap. Update never re-checks login since the field is immutable.
 func (s CandidateService) checkCandidateUniqueness(ctx context.Context, v *Validator, c Candidate, isUpdate bool) {
 	other, err := s.repo.OneCandidate(ctx, &db.CandidateSearch{Handle: &c.Handle})
 	if err != nil {
@@ -614,12 +773,15 @@ func (s CandidateService) checkCandidateUniqueness(ctx context.Context, v *Valid
 	if other != nil && (!isUpdate || other.ID != c.ID) {
 		v.Append("handle", FieldErrorUnique)
 	}
+	if isUpdate {
+		return
+	}
 	other, err = s.repo.OneCandidate(ctx, &db.CandidateSearch{Login: &c.Login})
 	if err != nil {
 		v.SetInternalError(err)
 		return
 	}
-	if other != nil && (!isUpdate || other.ID != c.ID) {
+	if other != nil {
 		v.Append("login", FieldErrorUnique)
 	}
 }
@@ -637,13 +799,18 @@ func findStage(stages []db.Stage, id int) *db.Stage {
 	return nil
 }
 
-func indexScores(scores []db.StageScore) map[int]db.StageScore {
-	out := make(map[int]db.StageScore, len(scores))
-	for _, sc := range scores {
-		out[sc.StageID] = sc
+// indexCandidateStages keys a candidate's CandidateStages by stageId. There's
+// at most one row per (candidate, stage), so this is a 1:1 map.
+func indexCandidateStages(rows []db.CandidateStage) map[int]db.CandidateStage {
+	out := make(map[int]db.CandidateStage, len(rows))
+	for _, r := range rows {
+		out[r.StageID] = r
 	}
 	return out
 }
+
+// ptrString returns a pointer to s — convenience wrapper to keep call sites tight.
+func ptrString(s string) *string { return &s }
 
 // totalsFromStages returns sum(MaxScore) across stages — the "max points" baseline.
 func totalsFromStages(stages []db.Stage) int {
@@ -654,12 +821,17 @@ func totalsFromStages(stages []db.Stage) int {
 	return maxPoints
 }
 
-// buildSummaryFor materialises a CandidateSummary using a pre-loaded score subset
-// belonging to this candidate (the caller is responsible for filtering).
-func buildSummaryFor(cand *db.Candidate, stages []db.Stage, candScores []db.StageScore, maxPoints int) CandidateSummary {
+// buildSummaryFor materialises a CandidateSummary using a pre-loaded
+// CandidateStage subset belonging to this candidate (the caller is responsible
+// for filtering). Only rows with non-NULL Score count toward TotalPoints/CompletedStages.
+func buildSummaryFor(cand *db.Candidate, stages []db.Stage, candStages []db.CandidateStage, maxPoints int) CandidateSummary {
 	totalPoints := 0
-	for _, sc := range candScores {
-		totalPoints += sc.Score
+	completed := 0
+	for _, cs := range candStages {
+		if cs.Score != nil {
+			totalPoints += *cs.Score
+			completed++
+		}
 	}
 	currentStage := findStage(stages, cand.CurrentStageID)
 
@@ -677,22 +849,22 @@ func buildSummaryFor(cand *db.Candidate, stages []db.Stage, candScores []db.Stag
 		CurrentStage:    NewStage(currentStage),
 		TotalPoints:     totalPoints,
 		MaxPoints:       maxPoints,
-		CompletedStages: len(candScores),
+		CompletedStages: completed,
 		StageCount:      len(stages),
 		CompletedAt:     formatTimePtr(cand.CompletedAt),
 	}
 }
 
-func buildSummaries(candidates []db.Candidate, stages []db.Stage, scores []db.StageScore) []CandidateSummary {
-	scoresByCand := make(map[int][]db.StageScore, len(candidates))
-	for _, sc := range scores {
-		scoresByCand[sc.CandidateID] = append(scoresByCand[sc.CandidateID], sc)
+func buildSummaries(candidates []db.Candidate, stages []db.Stage, cstages []db.CandidateStage) []CandidateSummary {
+	byCand := make(map[int][]db.CandidateStage, len(candidates))
+	for _, cs := range cstages {
+		byCand[cs.CandidateID] = append(byCand[cs.CandidateID], cs)
 	}
 	maxPoints := totalsFromStages(stages)
 
 	out := make([]CandidateSummary, 0, len(candidates))
 	for i := range candidates {
-		out = append(out, buildSummaryFor(&candidates[i], stages, scoresByCand[candidates[i].ID], maxPoints))
+		out = append(out, buildSummaryFor(&candidates[i], stages, byCand[candidates[i].ID], maxPoints))
 	}
 	return out
 }

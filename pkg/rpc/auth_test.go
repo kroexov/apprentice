@@ -192,6 +192,14 @@ func TestDB_AuthService_Login(t *testing.T) {
 // equality (CPU jitter is real) — just that the absent-user case spends
 // enough time to suggest a bcrypt was actually run.
 func TestDB_AuthService_Login_Timing(t *testing.T) {
+	// The whole point of this test is to verify that bcrypt is engaged on
+	// both real and ghost logins (anti-enumeration via constant-time work).
+	// At MinCost (the value the test binary forces for speed) hashing takes
+	// ~3ms, well under our 50ms floor — and the test is meaningless anyway
+	// since the protection only matters at production cost.
+	if bcryptCost < 10 {
+		t.Skip("timing test requires production-cost bcrypt")
+	}
 	Convey("Login response time doesn't leak user existence", t, func() {
 		f := newRPCFixtures(t)
 		ctx := t.Context()

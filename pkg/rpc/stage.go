@@ -136,6 +136,7 @@ func (s StageService) Update(ctx context.Context, stage Stage) (bool, error) {
 		cur.ShortTitle = stage.ShortTitle
 		cur.Description = stage.Description
 		cur.MaxScore = stage.MaxScore
+		cur.DeadlineDays = stage.DeadlineDays
 
 		ok, err = txRepo.UpdateStage(ctx, cur, db.WithColumns(
 			db.Columns.Stage.Alias,
@@ -143,6 +144,7 @@ func (s StageService) Update(ctx context.Context, stage Stage) (bool, error) {
 			db.Columns.Stage.ShortTitle,
 			db.Columns.Stage.Description,
 			db.Columns.Stage.MaxScore,
+			db.Columns.Stage.DeadlineDays,
 		))
 		if err != nil {
 			if e := mapStageUniqueErr(err); e != nil {
@@ -182,7 +184,7 @@ func (s StageService) Delete(ctx context.Context, id int) (bool, error) {
 			return ErrStageNotFound
 		}
 
-		cnt, err := txRepo.CountStageScores(ctx, &db.StageScoreSearch{StageID: &id})
+		cnt, err := txRepo.CountCandidateStages(ctx, &db.CandidateStageSearch{StageID: &id})
 		if err != nil {
 			return err
 		}
@@ -300,6 +302,12 @@ func (s StageService) isValid(ctx context.Context, stage Stage, isUpdate bool) V
 		v.AppendMin("maxScore", 1)
 	case stage.MaxScore > 100:
 		v.AppendMax("maxScore", 100)
+	}
+	switch {
+	case stage.DeadlineDays < 0:
+		v.AppendMin("deadlineDays", 0)
+	case stage.DeadlineDays > 365:
+		v.AppendMax("deadlineDays", 365)
 	}
 	if stage.Order < 1 {
 		v.AppendMin("order", 1)
