@@ -57,7 +57,7 @@ run:
 
 generate:
 	@go generate ./pkg/rpc
-	@go generate ./pkg/vt
+	@#go generate ./pkg/vt
 
 test: db-test
 	@echo "Running tests"

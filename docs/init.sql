@@ -42,18 +42,25 @@ SELECT setval('"candidates_candidateId_seq"', GREATEST((SELECT MAX("candidateId"
 
 -- candidateStages: записи о прохождении этапов.
 -- Для каждого пройденного этапа (order < currentStageId) запись содержит score/scoredAt;
--- createdAt — момент попадания на этап, deadline вычисляется от createdAt + stages.deadlineDays.
+-- все timestamp'ы отсчитываются от now(), чтобы при перезапуске seed на свежей
+-- БД даты выглядели актуально — а не "год назад".
+-- Stage deadlineDays: 14 / 7 / 7 / 14 / 30 (см. INSERT INTO stages выше);
+-- deadline = createdAt + deadlineDays, scoredAt — варьируется (early/onTime/late).
 INSERT INTO "candidateStages" ("candidateId", "stageId", "link", "score", "scoredAt", "deadline", "createdAt") VALUES
-	(1, 1, NULL, 8, '2024-01-15 12:00:00+00', '2024-01-15 00:00:00+00', '2024-01-01 00:00:00+00'),
-	(1, 2, NULL, 7, '2024-02-10 12:00:00+00', '2024-02-08 00:00:00+00', '2024-02-01 00:00:00+00'),
-	(2, 1, NULL, 9, '2024-01-10 12:00:00+00', '2024-01-15 00:00:00+00', '2024-01-01 00:00:00+00'),
-	(2, 2, NULL, 8, '2024-02-05 12:00:00+00', '2024-02-08 00:00:00+00', '2024-02-01 00:00:00+00'),
-	(2, 3, NULL, 7, '2024-02-15 12:00:00+00', '2024-02-18 00:00:00+00', '2024-02-11 00:00:00+00'),
-	(2, 4, NULL, 9, '2024-03-10 12:00:00+00', '2024-03-15 00:00:00+00', '2024-03-01 00:00:00+00'),
-	(4, 1, NULL, 6, '2024-01-20 12:00:00+00', '2024-01-15 00:00:00+00', '2024-01-01 00:00:00+00'),
-	(4, 2, NULL, 7, '2024-02-12 12:00:00+00', '2024-02-08 00:00:00+00', '2024-02-01 00:00:00+00'),
-	(4, 3, NULL, 8, '2024-02-20 12:00:00+00', '2024-02-18 00:00:00+00', '2024-02-11 00:00:00+00'),
-	(5, 1, NULL, 7, '2024-01-12 12:00:00+00', '2024-01-15 00:00:00+00', '2024-01-01 00:00:00+00')
+	-- stage 1 для всех (createdAt -130d, deadline -116d)
+	(1, 1, NULL, 8, now() - interval '116 days', now() - interval '116 days', now() - interval '130 days'),
+	(2, 1, NULL, 9, now() - interval '120 days', now() - interval '116 days', now() - interval '130 days'),
+	(4, 1, NULL, 6, now() - interval '111 days', now() - interval '116 days', now() - interval '130 days'),
+	(5, 1, NULL, 7, now() - interval '118 days', now() - interval '116 days', now() - interval '130 days'),
+	-- stage 2 (createdAt -100d, deadline -93d)
+	(1, 2, NULL, 7, now() - interval '91 days',  now() - interval '93 days',  now() - interval '100 days'),
+	(2, 2, NULL, 8, now() - interval '95 days',  now() - interval '93 days',  now() - interval '100 days'),
+	(4, 2, NULL, 7, now() - interval '88 days',  now() - interval '93 days',  now() - interval '100 days'),
+	-- stage 3 (createdAt -85d, deadline -78d)
+	(2, 3, NULL, 7, now() - interval '80 days',  now() - interval '78 days',  now() - interval '85 days'),
+	(4, 3, NULL, 8, now() - interval '78 days',  now() - interval '78 days',  now() - interval '85 days'),
+	-- stage 4 (createdAt -65d, deadline -51d)
+	(2, 4, NULL, 9, now() - interval '55 days',  now() - interval '51 days',  now() - interval '65 days')
 ON CONFLICT ("candidateId", "stageId") DO NOTHING;
 
 -- Пустая запись для текущего этапа каждого незавершённого кандидата.

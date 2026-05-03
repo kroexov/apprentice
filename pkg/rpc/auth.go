@@ -74,10 +74,7 @@ func (s AuthService) Login(ctx context.Context, login, password, userType string
 	}
 }
 
-// Register creates a new candidate and returns a fresh authKey. Only
-// userType="user" is accepted — admin self-registration is intentionally not
-// available over RPC. Admins are seeded via init.sql or created by another
-// admin through CandidateService.Add.
+// Register creates a candidate and returns a fresh authKey (userType=user only).
 //
 //zenrpc:login User login
 //zenrpc:password User password

@@ -77,10 +77,7 @@ func (AuthService) SMD() smd.ServiceInfo {
 				},
 			},
 			"Register": {
-				Description: `Register creates a new candidate and returns a fresh authKey. Only
-userType="user" is accepted — admin self-registration is intentionally not
-available over RPC. Admins are seeded via init.sql or created by another
-admin through CandidateService.Add.`,
+				Description: `Register creates a candidate and returns a fresh authKey (userType=user only).`,
 				Parameters: []smd.JSONSchema{
 					{
 						Name:        "login",
@@ -512,10 +509,7 @@ func (CandidateService) SMD() smd.ServiceInfo {
 				},
 			},
 			"Add": {
-				Description: `Add creates a new candidate and returns it together with a freshly generated
-one-time password. This is the ONLY response that ever carries a password —
-Get/GetByID/Update strip it. The caller is expected to hand the password to
-the candidate once and not store it.`,
+				Description: `Add creates a candidate and returns a one-time password (only here).`,
 				Parameters: []smd.JSONSchema{
 					{
 						Name:        "candidate",
@@ -690,7 +684,7 @@ the candidate once and not store it.`,
 				},
 			},
 			"Update": {
-				Description: `Update changes candidate's basic fields. Use Advance/Rollback for stage progression.`,
+				Description: `Update changes basic fields. login/currentStageId/timestamps are immutable here.`,
 				Parameters: []smd.JSONSchema{
 					{
 						Name:        "candidate",
@@ -803,11 +797,7 @@ the candidate once and not store it.`,
 				},
 			},
 			"Advance": {
-				Description: `Advance scores the candidate for their current stage and moves them to the next one.
-If current stage is the last, completedAt is set instead.
-
-Updates the existing empty CandidateStage row for the current stage with
-score/scoredAt; on transition, creates a new empty row for the next stage.`,
+				Description: `Advance scores current stage; moves to next or sets completedAt if last.`,
 				Parameters: []smd.JSONSchema{
 					{
 						Name: "candidateID",
@@ -967,9 +957,7 @@ score/scoredAt; on transition, creates a new empty row for the next stage.`,
 				},
 			},
 			"Rate": {
-				Description: `Rate sets or corrects the score on an existing CandidateStage row without
-changing the candidate's current stage. ScoredAt is set to now() if it was
-previously NULL; otherwise preserved.`,
+				Description: `Rate sets or corrects score on a CandidateStage; does not move stage.`,
 				Parameters: []smd.JSONSchema{
 					{
 						Name: "candidateStageID",
@@ -1032,15 +1020,7 @@ previously NULL; otherwise preserved.`,
 				},
 			},
 			"Rollback": {
-				Description: `Rollback reverts the candidate's most recent Advance:
-- For an in-progress candidate: deletes the empty CandidateStage of the
-current stage and clears score/scoredAt on the previously scored row,
-leaving the candidate "on" the previous stage with no score.
-- For a completed candidate: clears completedAt and clears score/scoredAt
-on the last scored row (which is also the current stage row, no empty
-row to delete).
-
-Deadline on the row that becomes "current" is left unchanged.`,
+				Description: `Rollback reverts the most recent Advance; clears completedAt if set.`,
 				Parameters: []smd.JSONSchema{
 					{
 						Name: "candidateID",
@@ -1135,14 +1115,7 @@ Deadline on the row that becomes "current" is left unchanged.`,
 				},
 			},
 			"SetLink": {
-				Description: `SetLink attaches or detaches the link on a CandidateStage.
-
-Auth: requires admin OR candidate principal (registered tier in middleware).
-Admin can set any candidateStage; candidate may only set rows where
-candidateId matches their own. Anonymous requests are rejected by middleware.
-
-link == nil or empty/whitespace clears the link (detach).
-Otherwise the link is validated as a http(s) URL no longer than 2048 chars.`,
+				Description: `SetLink attaches or detaches link on a CandidateStage (admin or self-candidate).`,
 				Parameters: []smd.JSONSchema{
 					{
 						Name: "candidateStageID",
