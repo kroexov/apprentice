@@ -11,13 +11,14 @@ import (
 )
 
 var RPC = struct {
-	AuthService      struct{ Login, Register string }
+	AuthService      struct{ Login, Me, Register string }
 	CandidateService struct{ Get, GetByID, Add, Update, Delete, Advance, Rate, Rollback, SetLink, Kanban string }
 	DashboardService struct{ Summary string }
 	StageService     struct{ Get, GetByID, Add, Update, Delete, Reorder string }
 }{
-	AuthService: struct{ Login, Register string }{
+	AuthService: struct{ Login, Me, Register string }{
 		Login:    "login",
+		Me:       "me",
 		Register: "register",
 	},
 	CandidateService: struct{ Get, GetByID, Add, Update, Delete, Advance, Rate, Rollback, SetLink, Kanban string }{
@@ -73,6 +74,36 @@ func (AuthService) SMD() smd.ServiceInfo {
 				},
 				Errors: map[int]string{
 					400: "Validation Error",
+					500: "Internal Error",
+				},
+			},
+			"Me": {
+				Description: `Me returns the current principal — login, userId and userType (admin or
+candidate). Requires the Authorization2 header; the middleware resolves
+admin first, then candidate.`,
+				Parameters: []smd.JSONSchema{},
+				Returns: smd.JSONSchema{
+					Description: `Me current principal`,
+					Optional:    true,
+					Type:        smd.Object,
+					TypeName:    "Me",
+					Properties: smd.PropertyList{
+						{
+							Name: "userId",
+							Type: smd.Integer,
+						},
+						{
+							Name: "login",
+							Type: smd.String,
+						},
+						{
+							Name: "userType",
+							Type: smd.String,
+						},
+					},
+				},
+				Errors: map[int]string{
+					401: "Unauthorized",
 					500: "Internal Error",
 				},
 			},
@@ -134,6 +165,9 @@ func (s AuthService) Invoke(ctx context.Context, method string, params json.RawM
 		}
 
 		resp.Set(s.Login(ctx, args.Login, args.Password, args.UserType))
+
+	case RPC.AuthService.Me:
+		resp.Set(s.Me(ctx))
 
 	case RPC.AuthService.Register:
 		var args = struct {
@@ -243,6 +277,12 @@ func (CandidateService) SMD() smd.ServiceInfo {
 									Type:     smd.Object,
 								},
 								{
+									Name:     "currentCandidateStage",
+									Optional: true,
+									Ref:      "#/definitions/CandidateStageSummary",
+									Type:     smd.Object,
+								},
+								{
 									Name: "totalPoints",
 									Type: smd.Integer,
 								},
@@ -299,6 +339,25 @@ func (CandidateService) SMD() smd.ServiceInfo {
 								{
 									Name: "deadlineDays",
 									Type: smd.Integer,
+								},
+							},
+						},
+						"CandidateStageSummary": {
+							Type: "object",
+							Properties: smd.PropertyList{
+								{
+									Name:     "link",
+									Optional: true,
+									Type:     smd.String,
+								},
+								{
+									Name:     "deadline",
+									Optional: true,
+									Type:     smd.String,
+								},
+								{
+									Name: "createdAt",
+									Type: smd.String,
 								},
 							},
 						},
@@ -378,6 +437,12 @@ func (CandidateService) SMD() smd.ServiceInfo {
 							Type:     smd.Object,
 						},
 						{
+							Name:     "currentCandidateStage",
+							Optional: true,
+							Ref:      "#/definitions/CandidateStageSummary",
+							Type:     smd.Object,
+						},
+						{
 							Name: "totalPoints",
 							Type: smd.Integer,
 						},
@@ -445,6 +510,25 @@ func (CandidateService) SMD() smd.ServiceInfo {
 								{
 									Name: "deadlineDays",
 									Type: smd.Integer,
+								},
+							},
+						},
+						"CandidateStageSummary": {
+							Type: "object",
+							Properties: smd.PropertyList{
+								{
+									Name:     "link",
+									Optional: true,
+									Type:     smd.String,
+								},
+								{
+									Name:     "deadline",
+									Optional: true,
+									Type:     smd.String,
+								},
+								{
+									Name: "createdAt",
+									Type: smd.String,
 								},
 							},
 						},
@@ -1304,6 +1388,12 @@ func (CandidateService) SMD() smd.ServiceInfo {
 									Type:     smd.Object,
 								},
 								{
+									Name:     "currentCandidateStage",
+									Optional: true,
+									Ref:      "#/definitions/CandidateStageSummary",
+									Type:     smd.Object,
+								},
+								{
 									Name: "totalPoints",
 									Type: smd.Integer,
 								},
@@ -1323,6 +1413,25 @@ func (CandidateService) SMD() smd.ServiceInfo {
 									Name:     "completedAt",
 									Optional: true,
 									Type:     smd.String,
+								},
+							},
+						},
+						"CandidateStageSummary": {
+							Type: "object",
+							Properties: smd.PropertyList{
+								{
+									Name:     "link",
+									Optional: true,
+									Type:     smd.String,
+								},
+								{
+									Name:     "deadline",
+									Optional: true,
+									Type:     smd.String,
+								},
+								{
+									Name: "createdAt",
+									Type: smd.String,
 								},
 							},
 						},

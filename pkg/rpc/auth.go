@@ -23,6 +23,15 @@ const (
 	UserTypeUser  = "user"
 )
 
+// User type discriminator for AuthService.Me — distinguishes the two principal
+// kinds in the response. MeTypeAdmin reuses UserTypeAdmin verbatim;
+// MeTypeCandidate is "candidate" (not "user") so the Me payload describes who
+// you are, not the auth flow you used.
+const (
+	MeTypeAdmin     = UserTypeAdmin
+	MeTypeCandidate = "candidate"
+)
+
 // authLoginRegex matches the candidates_login_check / candidates_handle_check
 // CHECK in docs/apisrv.sql so registered logins survive both DB constraints.
 var authLoginRegex = regexp.MustCompile(`^[a-z0-9.\-_]{2,40}$`)
@@ -72,6 +81,31 @@ func (s AuthService) Login(ctx context.Context, login, password, userType string
 	default:
 		return "", ErrInvalidUserType
 	}
+}
+
+// Me returns the current principal — login, userId and userType (admin or
+// candidate). Requires the Authorization2 header; the middleware resolves
+// admin first, then candidate.
+//
+//zenrpc:return Me current principal
+//zenrpc:401 Unauthorized
+//zenrpc:500 Internal Error
+func (s AuthService) Me(ctx context.Context) (*Me, error) {
+	if dbu := AdminFromContext(ctx); dbu != nil {
+		return &Me{
+			UserID:   dbu.ID,
+			Login:    dbu.Login,
+			UserType: MeTypeAdmin,
+		}, nil
+	}
+	if dbc := CandidateFromContext(ctx); dbc != nil {
+		return &Me{
+			UserID:   dbc.ID,
+			Login:    dbc.Login,
+			UserType: MeTypeCandidate,
+		}, nil
+	}
+	return nil, ErrUnauthorized
 }
 
 // Register creates a candidate and returns a fresh authKey (userType=user only).

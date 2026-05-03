@@ -796,34 +796,55 @@ func totalsFromStages(stages []db.Stage) int {
 // buildSummaryFor materialises a CandidateSummary using a pre-loaded
 // CandidateStage subset belonging to this candidate (the caller is responsible
 // for filtering). Only rows with non-NULL Score count toward TotalPoints/CompletedStages.
+// CurrentCandidateStage carries link/deadline/createdAt of the row with the
+// largest stageId — i.e. the candidate's current (or last reached) stage.
 func buildSummaryFor(cand *db.Candidate, stages []db.Stage, candStages []db.CandidateStage, maxPoints int) CandidateSummary {
 	totalPoints := 0
 	completed := 0
-	for _, cs := range candStages {
+	var currentCS *db.CandidateStage
+	for i := range candStages {
+		cs := &candStages[i]
 		if cs.Score != nil {
 			totalPoints += *cs.Score
 			completed++
+		}
+		if currentCS == nil || cs.StageID > currentCS.StageID {
+			currentCS = cs
 		}
 	}
 	currentStage := findStage(stages, cand.CurrentStageID)
 
 	return CandidateSummary{
-		ID:              cand.ID,
-		Name:            cand.Name,
-		Handle:          cand.Handle,
-		City:            cand.City,
-		Age:             cand.Age,
-		AvatarColor:     cand.AvatarColor,
-		Initials:        cand.Initials,
-		AvatarURL:       cand.AvatarUrl,
-		Strengths:       cand.Strengths,
-		Weaknesses:      cand.Weaknesses,
-		CurrentStage:    NewStage(currentStage),
-		TotalPoints:     totalPoints,
-		MaxPoints:       maxPoints,
-		CompletedStages: completed,
-		StageCount:      len(stages),
-		CompletedAt:     formatTimePtr(cand.CompletedAt),
+		ID:                    cand.ID,
+		Name:                  cand.Name,
+		Handle:                cand.Handle,
+		City:                  cand.City,
+		Age:                   cand.Age,
+		AvatarColor:           cand.AvatarColor,
+		Initials:              cand.Initials,
+		AvatarURL:             cand.AvatarUrl,
+		Strengths:             cand.Strengths,
+		Weaknesses:            cand.Weaknesses,
+		CurrentStage:          NewStage(currentStage),
+		CurrentCandidateStage: newCandidateStageSummary(currentCS),
+		TotalPoints:           totalPoints,
+		MaxPoints:             maxPoints,
+		CompletedStages:       completed,
+		StageCount:            len(stages),
+		CompletedAt:           formatTimePtr(cand.CompletedAt),
+	}
+}
+
+// newCandidateStageSummary projects a db.CandidateStage onto its summary form;
+// returns nil for nil input so absent rows survive the JSON round-trip.
+func newCandidateStageSummary(cs *db.CandidateStage) *CandidateStageSummary {
+	if cs == nil {
+		return nil
+	}
+	return &CandidateStageSummary{
+		Link:      cs.Link,
+		Deadline:  formatTimePtr(cs.Deadline),
+		CreatedAt: formatTime(cs.CreatedAt),
 	}
 }
 

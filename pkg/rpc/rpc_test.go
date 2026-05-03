@@ -544,7 +544,83 @@ func TestDB_CandidateService_Aggregates(t *testing.T) {
 			So(*detail.History[0].Score, ShouldEqual, 5)
 			So(*detail.History[1].Score, ShouldEqual, 9)
 		})
+
+		Convey("currentCandidateStage in summary tracks current stage's CandidateStage row", func() {
+			// alpha: untouched, sits on stage[0]; gamma: advanced twice, sits on stage[2].
+			alphaCS := loadCurrentCandidateStage(t, ctx, f.repo, alpha.ID, stages[0].ID)
+			gammaCS := loadCurrentCandidateStage(t, ctx, f.repo, gamma.ID, stages[2].ID)
+
+			Convey("Get exposes link/deadline/createdAt of the current row", func() {
+				list, err := f.candidate.Get(ctx, CandidateSortPoints)
+				So(err, ShouldBeNil)
+				byHandle := indexByHandle(list)
+
+				So(byHandle["alpha"].CurrentCandidateStage, ShouldNotBeNil)
+				So(byHandle["alpha"].CurrentCandidateStage.Link, ShouldBeNil)
+				So(byHandle["alpha"].CurrentCandidateStage.CreatedAt, ShouldEqual, formatTime(alphaCS.CreatedAt))
+
+				So(byHandle["gamma"].CurrentCandidateStage, ShouldNotBeNil)
+				So(byHandle["gamma"].CurrentCandidateStage.CreatedAt, ShouldEqual, formatTime(gammaCS.CreatedAt))
+			})
+
+			Convey("Link set on the current row is reflected on next Get", func() {
+				link := "https://example.com/alpha"
+				alphaCS.Link = &link
+				_, err := f.repo.UpdateCandidateStage(ctx, alphaCS, db.WithColumns(db.Columns.CandidateStage.Link))
+				So(err, ShouldBeNil)
+
+				list, _ := f.candidate.Get(ctx, CandidateSortPoints)
+				byHandle := indexByHandle(list)
+				So(byHandle["alpha"].CurrentCandidateStage.Link, ShouldNotBeNil)
+				So(*byHandle["alpha"].CurrentCandidateStage.Link, ShouldEqual, link)
+			})
+
+			Convey("Advance moves currentCandidateStage to the new (empty) row", func() {
+				_, err := f.candidate.Advance(ctx, alpha.ID, 6)
+				So(err, ShouldBeNil)
+				newCS := loadCurrentCandidateStage(t, ctx, f.repo, alpha.ID, stages[1].ID)
+
+				list, _ := f.candidate.Get(ctx, CandidateSortPoints)
+				byHandle := indexByHandle(list)
+				So(byHandle["alpha"].CurrentCandidateStage, ShouldNotBeNil)
+				So(byHandle["alpha"].CurrentCandidateStage.Link, ShouldBeNil)
+				So(byHandle["alpha"].CurrentCandidateStage.CreatedAt, ShouldEqual, formatTime(newCS.CreatedAt))
+			})
+
+			Convey("GetByID surfaces the same currentCandidateStage", func() {
+				detail, err := f.candidate.GetByID(ctx, gamma.ID)
+				So(err, ShouldBeNil)
+				So(detail.CurrentCandidateStage, ShouldNotBeNil)
+				So(detail.CurrentCandidateStage.CreatedAt, ShouldEqual, formatTime(gammaCS.CreatedAt))
+			})
+		})
 	})
+}
+
+// loadCurrentCandidateStage reads the CandidateStage row for a (candidate, stage)
+// pair directly via the repo so tests can assert on its on-disk timestamps and
+// mutate it without going through SetLink (which needs a principal in ctx).
+func loadCurrentCandidateStage(t *testing.T, ctx context.Context, repo db.ApprenticeRepo, candidateID, stageID int) *db.CandidateStage {
+	t.Helper()
+	cs, err := repo.OneCandidateStage(ctx, &db.CandidateStageSearch{
+		CandidateID: &candidateID,
+		StageID:     &stageID,
+	})
+	if err != nil {
+		t.Fatalf("load CandidateStage(%d,%d): %v", candidateID, stageID, err)
+	}
+	if cs == nil {
+		t.Fatalf("CandidateStage(%d,%d) not found", candidateID, stageID)
+	}
+	return cs
+}
+
+func indexByHandle(list []CandidateSummary) map[string]CandidateSummary {
+	out := make(map[string]CandidateSummary, len(list))
+	for _, c := range list {
+		out[c.Handle] = c
+	}
+	return out
 }
 
 // =============================================================================

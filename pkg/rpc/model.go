@@ -206,24 +206,36 @@ const (
 	StageStatusTodo    = "todo"
 )
 
+// CandidateStageSummary — компактная сводка по текущей CandidateStage кандидата
+// (link, createdAt, deadline). Заполняется в списочных ответах, чтобы UI не
+// ходил отдельно за CandidateStage. nil, если у кандидата ещё нет ни одной
+// CandidateStage-строки. ID/StageID намеренно не отдаём: id внутренний,
+// stageId дублирует CandidateSummary.CurrentStage.id.
+type CandidateStageSummary struct {
+	Link      *string `json:"link"`
+	Deadline  *string `json:"deadline"`
+	CreatedAt string  `json:"createdAt"`
+}
+
 // CandidateSummary — кандидат с агрегатами для списка/канбана.
 type CandidateSummary struct {
-	ID              int      `json:"id"`
-	Name            string   `json:"name"`
-	Handle          string   `json:"handle"`
-	City            string   `json:"city"`
-	Age             *int     `json:"age"`
-	AvatarColor     string   `json:"avatarColor"`
-	Initials        string   `json:"initials"`
-	AvatarURL       *string  `json:"avatarUrl"`
-	Strengths       []string `json:"strengths"`
-	Weaknesses      []string `json:"weaknesses"`
-	CurrentStage    *Stage   `json:"currentStage"`
-	TotalPoints     int      `json:"totalPoints"`
-	MaxPoints       int      `json:"maxPoints"`
-	CompletedStages int      `json:"completedStages"`
-	StageCount      int      `json:"stageCount"`
-	CompletedAt     *string  `json:"completedAt"`
+	ID                    int                    `json:"id"`
+	Name                  string                 `json:"name"`
+	Handle                string                 `json:"handle"`
+	City                  string                 `json:"city"`
+	Age                   *int                   `json:"age"`
+	AvatarColor           string                 `json:"avatarColor"`
+	Initials              string                 `json:"initials"`
+	AvatarURL             *string                `json:"avatarUrl"`
+	Strengths             []string               `json:"strengths"`
+	Weaknesses            []string               `json:"weaknesses"`
+	CurrentStage          *Stage                 `json:"currentStage"`
+	CurrentCandidateStage *CandidateStageSummary `json:"currentCandidateStage"`
+	TotalPoints           int                    `json:"totalPoints"`
+	MaxPoints             int                    `json:"maxPoints"`
+	CompletedStages       int                    `json:"completedStages"`
+	StageCount            int                    `json:"stageCount"`
+	CompletedAt           *string                `json:"completedAt"`
 }
 
 // CandidateDetail — карточка кандидата с историей этапов.
@@ -283,6 +295,18 @@ type AdvanceResult struct {
 type CandidateWithPassword struct {
 	Candidate
 	Password string `json:"password"`
+}
+
+// ============================================================================
+// Auth
+// ============================================================================
+
+// Me — публичные сведения о текущем принципале для AuthService.Me.
+// UserType — один из MeTypeAdmin / MeTypeCandidate.
+type Me struct {
+	UserID   int    `json:"userId"`
+	Login    string `json:"login"`
+	UserType string `json:"userType"`
 }
 
 // ============================================================================

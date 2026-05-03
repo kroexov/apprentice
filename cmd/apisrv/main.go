@@ -26,13 +26,14 @@ import (
 const appName = "apisrv"
 
 var (
-	fs                 = flag.NewFlagSetWithEnvPrefix(os.Args[0], strings.ToUpper(appName), 0)
-	flConfigPath       = fs.String("config", "config.toml", "Path to config file")
-	flVerbose          = fs.Bool("verbose", false, "enable debug output")
-	flJSONLogs         = fs.Bool("json", false, "enable json output")
-	flDev              = fs.Bool("dev", false, "enable dev mode")
-	flGenerateTSClient = fs.Bool("ts_client", false, "generate TypeScript vt rpc client and exit")
-	cfg                app.Config
+	fs                       = flag.NewFlagSetWithEnvPrefix(os.Args[0], strings.ToUpper(appName), 0)
+	flConfigPath             = fs.String("config", "config.toml", "Path to config file")
+	flVerbose                = fs.Bool("verbose", false, "enable debug output")
+	flJSONLogs               = fs.Bool("json", false, "enable json output")
+	flDev                    = fs.Bool("dev", false, "enable dev mode")
+	flGenerateTSClient       = fs.Bool("ts_client", false, "generate TypeScript vt rpc client and exit")
+	flGeneratePublicTSClient = fs.Bool("ts_public_client", false, "generate TypeScript public rpc client and exit")
+	cfg                      app.Config
 )
 
 func main() {
@@ -86,12 +87,7 @@ func main() {
 	}
 
 	// generate TS client from cmd flags
-	if *flGenerateTSClient {
-		b, er := a.VTTypeScriptClient()
-		exitOnError(er)
-		_, _ = fmt.Fprint(os.Stdout, string(b))
-		os.Exit(0)
-	}
+	maybeGenerateTSClient(a)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
@@ -120,6 +116,23 @@ func main() {
 
 	if err = a.Shutdown(5 * time.Second); err != nil {
 		a.Error(ctx, "shutting down service", "err", err)
+	}
+}
+
+// maybeGenerateTSClient handles `-ts_client` / `-ts_public_client` flags:
+// emits the requested TypeScript client to stdout and exits. No-op otherwise.
+func maybeGenerateTSClient(a *app.App) {
+	switch {
+	case *flGenerateTSClient:
+		b, err := a.VTTypeScriptClient()
+		exitOnError(err)
+		_, _ = fmt.Fprint(os.Stdout, string(b))
+		os.Exit(0)
+	case *flGeneratePublicTSClient:
+		b, err := a.PublicTypeScriptClient()
+		exitOnError(err)
+		_, _ = fmt.Fprint(os.Stdout, string(b))
+		os.Exit(0)
 	}
 }
 

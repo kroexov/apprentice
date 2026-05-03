@@ -267,6 +267,71 @@ func TestDB_Middleware_RegisteredTier(t *testing.T) {
 	})
 }
 
+// TestDB_AuthService_Me covers auth.me end-to-end: anonymous is rejected, admin
+// and candidate principals each round-trip their own login + userType.
+func TestDB_AuthService_Me(t *testing.T) {
+	Convey("auth.me", t, func() {
+		hs, dbo := newHTTPHarness(t)
+		ctx := t.Context()
+		adminKey := seedAdmin(t, ctx, dbo, "admin.me")
+
+		stageResp := rpcCall(t, hs, adminKey, NSStage, RPC.StageService.Add, map[string]any{
+			"alias": "s1", "order": 1, "title": "t", "shortTitle": "s", "maxScore": 10,
+		})
+		So(stageResp.Error, ShouldBeNil)
+		cand, candKey := registerCandidate(t, ctx, hs, dbo, "ivan.me")
+
+		Convey("anonymous → 401", func() {
+			r := rpcCall(t, hs, "", NSAuth, RPC.AuthService.Me)
+			So(r.Error, ShouldNotBeNil)
+			So(r.Error.Code, ShouldEqual, http.StatusUnauthorized)
+		})
+
+		Convey("bogus key → 401", func() {
+			r := rpcCall(t, hs, "definitely-not-a-real-authkey", NSAuth, RPC.AuthService.Me)
+			So(r.Error, ShouldNotBeNil)
+			So(r.Error.Code, ShouldEqual, http.StatusUnauthorized)
+		})
+
+		Convey("admin key → admin payload", func() {
+			r := rpcCall(t, hs, adminKey, NSAuth, RPC.AuthService.Me)
+			So(r.Error, ShouldBeNil)
+			var me Me
+			So(json.Unmarshal(r.Result, &me), ShouldBeNil)
+			So(me.Login, ShouldEqual, "admin.me")
+			So(me.UserType, ShouldEqual, MeTypeAdmin)
+			So(me.UserID, ShouldBeGreaterThan, 0)
+		})
+
+		Convey("candidate key → candidate payload", func() {
+			r := rpcCall(t, hs, candKey, NSAuth, RPC.AuthService.Me)
+			So(r.Error, ShouldBeNil)
+			var me Me
+			So(json.Unmarshal(r.Result, &me), ShouldBeNil)
+			So(me.Login, ShouldEqual, "ivan.me")
+			So(me.UserType, ShouldEqual, MeTypeCandidate)
+			So(me.UserID, ShouldEqual, cand.ID)
+		})
+
+		// Re-issued authKey from auth.login (vs. the register-issued one above)
+		// must also pass the registered tier and round-trip the same payload.
+		Convey("candidate key issued via auth.login → candidate payload", func() {
+			loginResp := rpcCall(t, hs, "", NSAuth, RPC.AuthService.Login, "ivan.me", "passw0rd!", UserTypeUser)
+			So(loginResp.Error, ShouldBeNil)
+			var loginKey string
+			So(json.Unmarshal(loginResp.Result, &loginKey), ShouldBeNil)
+
+			r := rpcCall(t, hs, loginKey, NSAuth, RPC.AuthService.Me)
+			So(r.Error, ShouldBeNil)
+			var me Me
+			So(json.Unmarshal(r.Result, &me), ShouldBeNil)
+			So(me.Login, ShouldEqual, "ivan.me")
+			So(me.UserType, ShouldEqual, MeTypeCandidate)
+			So(me.UserID, ShouldEqual, cand.ID)
+		})
+	})
+}
+
 // rpcCallRaw lets a test send a raw JSON params array (e.g. to embed an explicit
 // `null`) instead of the default Go-marshalled []any.
 func rpcCallRaw(t *testing.T, hs *httptest.Server, header, ns, method string, rawParams []byte) rpcResponse {

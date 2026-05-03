@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"apisrv/pkg/db"
+	"apisrv/pkg/rpc"
 	"apisrv/pkg/vt"
 
 	"github.com/go-pg/pg/v10"
@@ -77,6 +78,15 @@ func (a *App) VTTypeScriptClient() ([]byte, error) {
 	gen := rpcgen.FromSMD(a.vtsrv.SMD())
 	tsSettings := typescript.Settings{ExcludedNamespace: []string{NSVFS}, WithClasses: true}
 	return gen.TSCustomClient(tsSettings).Generate()
+}
+
+// PublicTypeScriptClient returns TypeScript client for the public /v1/rpc API.
+// Mirrors what /v1/rpc/api.ts serves at runtime — used by `make
+// type-script-public-client` to refresh the docs/api.ts snapshot.
+func (a *App) PublicTypeScriptClient() ([]byte, error) {
+	srv := rpc.New(a.db, a.Logger, a.cfg.Server.IsDevel)
+	gen := rpcgen.FromSMD(srv.SMD())
+	return gen.TSClient(nil).Generate()
 }
 
 // Shutdown is a function that gracefully stops HTTP server.

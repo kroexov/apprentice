@@ -132,8 +132,11 @@ func isOpenMethod(ns, method string) bool {
 // (admin or candidate) but reject anonymous requests. Per-row authorization
 // (e.g. candidate may only edit own rows) happens inside the service method.
 func isRegisteredMethod(ns, method string) bool {
-	if ns == NSCandidate {
+	switch ns {
+	case NSCandidate:
 		return method == RPC.CandidateService.SetLink
+	case NSAuth:
+		return method == RPC.AuthService.Me
 	}
 	return false
 }

@@ -103,6 +103,9 @@ mfd-vt-template: --check-ns type-script-client
 type-script-client: generate
 	@go run $(GOFLAGS) $(MAIN) -config=cfg/local.toml -ts_client > ../gold-vt/src/services/api/factory.ts
 
+api-ts: generate
+	@go run $(GOFLAGS) $(MAIN) -config=cfg/local.toml -ts_public_client > docs/api.ts
+
 
 --check-ns:
 ifeq ($(NS),"NONE")
