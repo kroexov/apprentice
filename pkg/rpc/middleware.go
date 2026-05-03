@@ -134,7 +134,8 @@ func isOpenMethod(ns, method string) bool {
 func isRegisteredMethod(ns, method string) bool {
 	switch ns {
 	case NSCandidate:
-		return method == RPC.CandidateService.SetLink
+		return method == RPC.CandidateService.SetLink ||
+			method == RPC.CandidateService.SetAvatarURL
 	case NSAuth:
 		return method == RPC.AuthService.Me
 	}

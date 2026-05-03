@@ -589,6 +589,51 @@ func (s CandidateService) SetLink(ctx context.Context, candidateStageID int, lin
 	return NewCandidateStage(cur), nil
 }
 
+// SetAvatarURL attaches or detaches avatarUrl on a Candidate (admin or self-candidate).
+// avatarUrl param name (vs avatarURL) is intentional: zenrpc reuses it as the
+// JSON tag, and Candidate.AvatarURL ships json:avatarUrl — keep them in sync.
+//
+//zenrpc:candidateId int
+//zenrpc:avatarUrl *string
+//zenrpc:return Candidate
+//zenrpc:401 Unauthorized
+//zenrpc:403 Forbidden
+//zenrpc:404 Not Found
+//zenrpc:400 Validation Error
+//zenrpc:500 Internal Error
+func (s CandidateService) SetAvatarURL(ctx context.Context, candidateID int, avatarUrl *string) (*Candidate, error) { //nolint:staticcheck
+	admin := AdminFromContext(ctx)
+	cand := CandidateFromContext(ctx)
+	if admin == nil && cand == nil {
+		return nil, ErrUnauthorized
+	}
+
+	cur, err := s.repo.CandidateByID(ctx, candidateID, s.repo.FullCandidate())
+	if err != nil {
+		return nil, InternalError(err)
+	}
+	if cur == nil {
+		return nil, ErrCandidateNotFound
+	}
+	if admin == nil && cur.ID != cand.ID {
+		return nil, ErrForbidden
+	}
+
+	normalized, err := normalizeLink(avatarUrl)
+	if err != nil {
+		return nil, err
+	}
+	cur.AvatarUrl = normalized
+	cur.UpdatedAt = time.Now()
+	if _, err := s.repo.UpdateCandidate(ctx, cur,
+		db.WithColumns(db.Columns.Candidate.AvatarUrl, db.Columns.Candidate.UpdatedAt)); err != nil {
+		return nil, InternalError(err)
+	}
+	s.Print(ctx, "candidate avatar url set",
+		"candidateId", cur.ID, "detached", normalized == nil)
+	return NewCandidate(cur), nil
+}
+
 // normalizeLink returns nil for nil/empty/whitespace input (detach), otherwise
 // validates the trimmed value is a http(s) URL no longer than candidateStageLinkMaxLen.
 func normalizeLink(link *string) (*string, error) {
@@ -679,9 +724,9 @@ func (s CandidateService) isValid(ctx context.Context, c Candidate, isUpdate boo
 	case !candidateHandleRegex.MatchString(c.Handle):
 		v.Append("handle", FieldErrorFormat)
 	}
-	// Login is validated only on Add. Update ignores `candidate.login`
-	// entirely (immutable field — see Update doc-comment), so we don't want
-	// stale/empty values from the client to fail validation here.
+	// Login and currentStageId are validated only on Add. Update ignores both
+	// (immutable fields — see Update doc-comment), so stale/empty values from
+	// the client must not fail validation here.
 	if !isUpdate {
 		switch {
 		case c.Login == "":
@@ -690,6 +735,9 @@ func (s CandidateService) isValid(ctx context.Context, c Candidate, isUpdate boo
 			v.AppendMax("login", 64)
 		case !candidateHandleRegex.MatchString(c.Login):
 			v.Append("login", FieldErrorFormat)
+		}
+		if c.CurrentStageID == 0 {
+			v.Append("currentStageId", FieldErrorRequired)
 		}
 	}
 	if utf8.RuneCountInString(c.City) > 128 {
@@ -721,9 +769,6 @@ func (s CandidateService) isValid(ctx context.Context, c Candidate, isUpdate boo
 			v.AppendMax("weaknesses", 40)
 			break
 		}
-	}
-	if c.CurrentStageID == 0 {
-		v.Append("currentStageId", FieldErrorRequired)
 	}
 	if v.HasErrors() {
 		return v

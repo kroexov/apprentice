@@ -12,7 +12,7 @@ import (
 
 var RPC = struct {
 	AuthService      struct{ Login, Me, Register string }
-	CandidateService struct{ Get, GetByID, Add, Update, Delete, Advance, Rate, Rollback, SetLink, Kanban string }
+	CandidateService struct{ Get, GetByID, Add, Update, Delete, Advance, Rate, Rollback, SetLink, SetAvatarURL, Kanban string }
 	DashboardService struct{ Summary string }
 	StageService     struct{ Get, GetByID, Add, Update, Delete, Reorder string }
 }{
@@ -21,17 +21,18 @@ var RPC = struct {
 		Me:       "me",
 		Register: "register",
 	},
-	CandidateService: struct{ Get, GetByID, Add, Update, Delete, Advance, Rate, Rollback, SetLink, Kanban string }{
-		Get:      "get",
-		GetByID:  "getbyid",
-		Add:      "add",
-		Update:   "update",
-		Delete:   "delete",
-		Advance:  "advance",
-		Rate:     "rate",
-		Rollback: "rollback",
-		SetLink:  "setlink",
-		Kanban:   "kanban",
+	CandidateService: struct{ Get, GetByID, Add, Update, Delete, Advance, Rate, Rollback, SetLink, SetAvatarURL, Kanban string }{
+		Get:          "get",
+		GetByID:      "getbyid",
+		Add:          "add",
+		Update:       "update",
+		Delete:       "delete",
+		Advance:      "advance",
+		Rate:         "rate",
+		Rollback:     "rollback",
+		SetLink:      "setlink",
+		SetAvatarURL: "setavatarurl",
+		Kanban:       "kanban",
 	},
 	DashboardService: struct{ Summary string }{
 		Summary: "summary",
@@ -1264,6 +1265,109 @@ func (CandidateService) SMD() smd.ServiceInfo {
 					500: "Internal Error",
 				},
 			},
+			"SetAvatarURL": {
+				Description: `SetAvatarURL attaches or detaches avatarUrl on a Candidate (admin or self-candidate).`,
+				Parameters: []smd.JSONSchema{
+					{
+						Name: "candidateID",
+						Type: smd.Integer,
+					},
+					{
+						Name:        "avatarUrl",
+						Optional:    true,
+						Description: `*string`,
+						Type:        smd.String,
+					},
+				},
+				Returns: smd.JSONSchema{
+					Description: `Candidate`,
+					Optional:    true,
+					Type:        smd.Object,
+					TypeName:    "Candidate",
+					Properties: smd.PropertyList{
+						{
+							Name: "id",
+							Type: smd.Integer,
+						},
+						{
+							Name: "name",
+							Type: smd.String,
+						},
+						{
+							Name: "handle",
+							Type: smd.String,
+						},
+						{
+							Name: "login",
+							Type: smd.String,
+						},
+						{
+							Name: "city",
+							Type: smd.String,
+						},
+						{
+							Name:     "age",
+							Optional: true,
+							Type:     smd.Integer,
+						},
+						{
+							Name: "bio",
+							Type: smd.String,
+						},
+						{
+							Name: "avatarColor",
+							Type: smd.String,
+						},
+						{
+							Name: "initials",
+							Type: smd.String,
+						},
+						{
+							Name:     "avatarUrl",
+							Optional: true,
+							Type:     smd.String,
+						},
+						{
+							Name: "strengths",
+							Type: smd.Array,
+							Items: map[string]string{
+								"type": smd.String,
+							},
+						},
+						{
+							Name: "weaknesses",
+							Type: smd.Array,
+							Items: map[string]string{
+								"type": smd.String,
+							},
+						},
+						{
+							Name: "currentStageId",
+							Type: smd.Integer,
+						},
+						{
+							Name: "createdAt",
+							Type: smd.String,
+						},
+						{
+							Name: "updatedAt",
+							Type: smd.String,
+						},
+						{
+							Name:     "completedAt",
+							Optional: true,
+							Type:     smd.String,
+						},
+					},
+				},
+				Errors: map[int]string{
+					401: "Unauthorized",
+					403: "Forbidden",
+					404: "Not Found",
+					400: "Validation Error",
+					500: "Internal Error",
+				},
+			},
 			"Kanban": {
 				Description: `Kanban returns candidates grouped by their current stage.`,
 				Parameters:  []smd.JSONSchema{},
@@ -1624,6 +1728,26 @@ func (s CandidateService) Invoke(ctx context.Context, method string, params json
 		}
 
 		resp.Set(s.SetLink(ctx, args.CandidateStageID, args.Link))
+
+	case RPC.CandidateService.SetAvatarURL:
+		var args = struct {
+			CandidateID int     `json:"candidateID"`
+			AvatarUrl   *string `json:"avatarUrl"`
+		}{}
+
+		if zenrpc.IsArray(params) {
+			if params, err = zenrpc.ConvertToObject([]string{"candidateID", "avatarUrl"}, params); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &args); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		resp.Set(s.SetAvatarURL(ctx, args.CandidateID, args.AvatarUrl))
 
 	case RPC.CandidateService.Kanban:
 		resp.Set(s.Kanban(ctx))

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"apisrv/pkg/db"
@@ -261,6 +262,110 @@ func TestDB_Middleware_RegisteredTier(t *testing.T) {
 
 		Convey("unknown candidateStageId → 404", func() {
 			r := rpcCall(t, hs, adminKey, NSCandidate, RPC.CandidateService.SetLink, 99999, "https://example.com/x")
+			So(r.Error, ShouldNotBeNil)
+			So(r.Error.Code, ShouldEqual, http.StatusNotFound)
+		})
+	})
+}
+
+// TestDB_CandidateService_SetAvatarURL covers candidate.setavatarurl across the
+// same auth tiers as SetLink: anonymous→401, admin OK, self-candidate OK, other
+// candidate→403, plus URL validation and detach-on-null.
+func TestDB_CandidateService_SetAvatarURL(t *testing.T) {
+	Convey("candidate.setavatarurl", t, func() {
+		hs, dbo := newHTTPHarness(t)
+		ctx := t.Context()
+
+		adminKey := seedAdmin(t, ctx, dbo, "admin.av")
+
+		stageResp := rpcCall(t, hs, adminKey, NSStage, RPC.StageService.Add, map[string]any{
+			"alias": "s1", "order": 1, "title": "t", "shortTitle": "s", "maxScore": 10,
+		})
+		So(stageResp.Error, ShouldBeNil)
+
+		ownerCand, ownerKey := registerCandidate(t, ctx, hs, dbo, "owner.av")
+		_, otherKey := registerCandidate(t, ctx, hs, dbo, "other.av")
+
+		repo := db.NewApprenticeRepo(dbo)
+
+		Convey("anonymous → 401", func() {
+			r := rpcCall(t, hs, "", NSCandidate, RPC.CandidateService.SetAvatarURL, ownerCand.ID, "https://example.com/a.png")
+			So(r.Error, ShouldNotBeNil)
+			So(r.Error.Code, ShouldEqual, http.StatusUnauthorized)
+		})
+
+		Convey("admin can set on any candidate", func() {
+			r := rpcCall(t, hs, adminKey, NSCandidate, RPC.CandidateService.SetAvatarURL, ownerCand.ID, "https://example.com/admin.png")
+			So(r.Error, ShouldBeNil)
+
+			updated, err := repo.CandidateByID(ctx, ownerCand.ID)
+			So(err, ShouldBeNil)
+			So(updated.AvatarUrl, ShouldNotBeNil)
+			So(*updated.AvatarUrl, ShouldEqual, "https://example.com/admin.png")
+		})
+
+		Convey("candidate can set on self", func() {
+			r := rpcCall(t, hs, ownerKey, NSCandidate, RPC.CandidateService.SetAvatarURL, ownerCand.ID, "https://example.com/own.png")
+			So(r.Error, ShouldBeNil)
+
+			updated, err := repo.CandidateByID(ctx, ownerCand.ID)
+			So(err, ShouldBeNil)
+			So(updated.AvatarUrl, ShouldNotBeNil)
+			So(*updated.AvatarUrl, ShouldEqual, "https://example.com/own.png")
+		})
+
+		Convey("candidate cannot set on someone else → 403", func() {
+			r := rpcCall(t, hs, otherKey, NSCandidate, RPC.CandidateService.SetAvatarURL, ownerCand.ID, "https://example.com/oops.png")
+			So(r.Error, ShouldNotBeNil)
+			So(r.Error.Code, ShouldEqual, http.StatusForbidden)
+		})
+
+		Convey("nil avatarUrl detaches", func() {
+			r := rpcCall(t, hs, ownerKey, NSCandidate, RPC.CandidateService.SetAvatarURL, ownerCand.ID, "https://example.com/a.png")
+			So(r.Error, ShouldBeNil)
+			r = rpcCallRaw(t, hs, ownerKey, NSCandidate, RPC.CandidateService.SetAvatarURL, []byte(`[`+strconv.Itoa(ownerCand.ID)+`,null]`))
+			So(r.Error, ShouldBeNil)
+
+			updated, err := repo.CandidateByID(ctx, ownerCand.ID)
+			So(err, ShouldBeNil)
+			So(updated.AvatarUrl, ShouldBeNil)
+		})
+
+		Convey("empty/whitespace string detaches", func() {
+			r := rpcCall(t, hs, ownerKey, NSCandidate, RPC.CandidateService.SetAvatarURL, ownerCand.ID, "https://example.com/a.png")
+			So(r.Error, ShouldBeNil)
+
+			r = rpcCall(t, hs, ownerKey, NSCandidate, RPC.CandidateService.SetAvatarURL, ownerCand.ID, "")
+			So(r.Error, ShouldBeNil)
+			updated, err := repo.CandidateByID(ctx, ownerCand.ID)
+			So(err, ShouldBeNil)
+			So(updated.AvatarUrl, ShouldBeNil)
+
+			r = rpcCall(t, hs, ownerKey, NSCandidate, RPC.CandidateService.SetAvatarURL, ownerCand.ID, "https://example.com/b.png")
+			So(r.Error, ShouldBeNil)
+
+			r = rpcCall(t, hs, ownerKey, NSCandidate, RPC.CandidateService.SetAvatarURL, ownerCand.ID, "   ")
+			So(r.Error, ShouldBeNil)
+			updated, err = repo.CandidateByID(ctx, ownerCand.ID)
+			So(err, ShouldBeNil)
+			So(updated.AvatarUrl, ShouldBeNil)
+		})
+
+		Convey("invalid scheme → 400", func() {
+			r := rpcCall(t, hs, ownerKey, NSCandidate, RPC.CandidateService.SetAvatarURL, ownerCand.ID, "ftp://nope")
+			So(r.Error, ShouldNotBeNil)
+			So(r.Error.Code, ShouldEqual, http.StatusBadRequest)
+		})
+
+		Convey("too-long URL → 400", func() {
+			long := "https://example.com/" + strings.Repeat("x", candidateStageLinkMaxLen)
+			r := rpcCall(t, hs, ownerKey, NSCandidate, RPC.CandidateService.SetAvatarURL, ownerCand.ID, long)
+			So(r.Error, ShouldNotBeNil)
+			So(r.Error.Code, ShouldEqual, http.StatusBadRequest)
+		})
+
+		Convey("unknown candidateId → 404", func() {
+			r := rpcCall(t, hs, adminKey, NSCandidate, RPC.CandidateService.SetAvatarURL, 99999, "https://example.com/x.png")
 			So(r.Error, ShouldNotBeNil)
 			So(r.Error.Code, ShouldEqual, http.StatusNotFound)
 		})
