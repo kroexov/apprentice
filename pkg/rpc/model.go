@@ -198,6 +198,9 @@ type CandidateStageHistory struct {
 	Link             *string `json:"link"`
 	Deadline         *string `json:"deadline"`
 	CreatedAt        *string `json:"createdAt"`
+	IsReady          bool    `json:"isReady"`
+	SetReadyAt       *string `json:"setReadyAt"`
+	Retries          int     `json:"retries"`
 }
 
 const (
@@ -212,9 +215,12 @@ const (
 // CandidateStage-строки. ID/StageID намеренно не отдаём: id внутренний,
 // stageId дублирует CandidateSummary.CurrentStage.id.
 type CandidateStageSummary struct {
-	Link      *string `json:"link"`
-	Deadline  *string `json:"deadline"`
-	CreatedAt string  `json:"createdAt"`
+	Link       *string `json:"link"`
+	Deadline   *string `json:"deadline"`
+	CreatedAt  string  `json:"createdAt"`
+	IsReady    bool    `json:"isReady"`
+	SetReadyAt *string `json:"setReadyAt"`
+	Retries    int     `json:"retries"`
 }
 
 // CandidateSummary — кандидат с агрегатами для списка/канбана.
@@ -265,6 +271,9 @@ type CandidateStage struct {
 	ScoredAt    *string `json:"scoredAt"`
 	Deadline    *string `json:"deadline"`
 	CreatedAt   string  `json:"createdAt"`
+	IsReady     bool    `json:"isReady"`
+	SetReadyAt  *string `json:"setReadyAt"`
+	Retries     int     `json:"retries"`
 }
 
 func NewCandidateStage(d *db.CandidateStage) *CandidateStage {
@@ -280,6 +289,9 @@ func NewCandidateStage(d *db.CandidateStage) *CandidateStage {
 		ScoredAt:    formatTimePtr(d.ScoredAt),
 		Deadline:    formatTimePtr(d.Deadline),
 		CreatedAt:   formatTime(d.CreatedAt),
+		IsReady:     d.IsReady,
+		SetReadyAt:  formatTimePtr(d.SetReadyAt),
+		Retries:     d.Retries,
 	}
 }
 

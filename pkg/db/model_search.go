@@ -415,6 +415,9 @@ type CandidateStageSearch struct {
 	ScoredAt    *time.Time
 	ScoredBy    *int
 	Deadline    *time.Time
+	IsReady     *bool
+	SetReadyAt  *time.Time
+	Retries     *int
 	CreatedAt   *time.Time
 	IDs         []int
 }
@@ -446,6 +449,15 @@ func (css *CandidateStageSearch) Apply(query *orm.Query) *orm.Query {
 	}
 	if css.Deadline != nil {
 		css.where(query, Tables.CandidateStage.Alias, Columns.CandidateStage.Deadline, css.Deadline)
+	}
+	if css.IsReady != nil {
+		css.where(query, Tables.CandidateStage.Alias, Columns.CandidateStage.IsReady, css.IsReady)
+	}
+	if css.SetReadyAt != nil {
+		css.where(query, Tables.CandidateStage.Alias, Columns.CandidateStage.SetReadyAt, css.SetReadyAt)
+	}
+	if css.Retries != nil {
+		css.where(query, Tables.CandidateStage.Alias, Columns.CandidateStage.Retries, css.Retries)
 	}
 	if css.CreatedAt != nil {
 		css.where(query, Tables.CandidateStage.Alias, Columns.CandidateStage.CreatedAt, css.CreatedAt)

@@ -71,6 +71,31 @@ func (ar ApprenticeRepo) NextStageAfter(ctx context.Context, currentOrder int) (
 	return &list[0], nil
 }
 
+// UnsetReadyAndBumpRetries atomically clears isReady (and setReadyAt) and
+// increments retries for a CandidateStage — but only when the row was
+// actually ready at UPDATE time. Returns true when the row flipped, false
+// when it was already not-ready (idempotent no-op for repeated admin
+// setReady(false)).
+//
+// The WHERE "isReady" = true gate is what prevents lost updates: two
+// concurrent admin setReady(false) calls on the same row would otherwise
+// both read prevReady=true, both write retries+1, and the second UPDATE
+// would clobber the first's increment. With the gate, exactly one UPDATE
+// matches the row; the other matches zero rows and is a no-op.
+func (ar ApprenticeRepo) UnsetReadyAndBumpRetries(ctx context.Context, candidateStageID int) (bool, error) {
+	res, err := ar.db.ExecContext(ctx, `
+		UPDATE "candidateStages"
+		SET "isReady"    = false,
+			"setReadyAt" = NULL,
+			"retries"    = "retries" + 1
+		WHERE "candidateStageId" = ? AND "isReady" = true
+	`, candidateStageID)
+	if err != nil {
+		return false, err
+	}
+	return res.RowsAffected() > 0, nil
+}
+
 // IsUniqueViolation reports whether err is a Postgres unique-constraint error.
 // Used to convert race-induced 23505 collisions into domain-specific RPC errors.
 func IsUniqueViolation(err error) bool {

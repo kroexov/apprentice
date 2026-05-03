@@ -33,6 +33,7 @@ var (
 	ErrHandleTaken            = zenrpc.NewStringError(http.StatusBadRequest, "handle is already taken")
 	ErrForbidden              = zenrpc.NewStringError(http.StatusForbidden, "forbidden")
 	ErrLinkInvalid            = zenrpc.NewStringError(http.StatusBadRequest, "link is not a valid http(s) URL")
+	ErrLinkRequiredForReady   = zenrpc.NewStringError(http.StatusBadRequest, "link is required to mark stage as ready")
 )
 
 const candidateStageLinkMaxLen = 2048
@@ -121,12 +122,18 @@ func (s CandidateService) GetByID(ctx context.Context, id int) (*CandidateDetail
 			row.Link = cs.Link
 			row.Deadline = formatTimePtr(cs.Deadline)
 			row.CreatedAt = ptrString(cs.CreatedAt.Format(time.RFC3339))
+			row.IsReady = cs.IsReady
+			row.SetReadyAt = formatTimePtr(cs.SetReadyAt)
+			row.Retries = cs.Retries
 		case hasRow && cand.CompletedAt == nil && currentStage != nil && st.ID == currentStage.ID:
 			row.Status = StageStatusCurrent
 			row.CandidateStageID = &cs.ID
 			row.Link = cs.Link
 			row.Deadline = formatTimePtr(cs.Deadline)
 			row.CreatedAt = ptrString(cs.CreatedAt.Format(time.RFC3339))
+			row.IsReady = cs.IsReady
+			row.SetReadyAt = formatTimePtr(cs.SetReadyAt)
+			row.Retries = cs.Retries
 		default:
 			row.Status = StageStatusTodo
 		}
@@ -589,6 +596,81 @@ func (s CandidateService) SetLink(ctx context.Context, candidateStageID int, lin
 	return NewCandidateStage(cur), nil
 }
 
+// SetReady toggles isReady on a CandidateStage (admin or self-candidate).
+// Setting isReady=true requires a non-empty link. isReady=false has no
+// preconditions; allowed at any time, including after the stage is scored.
+//
+//zenrpc:candidateStageId int
+//zenrpc:isReady bool
+//zenrpc:return CandidateStage
+//zenrpc:401 Unauthorized
+//zenrpc:403 Forbidden
+//zenrpc:404 Not Found
+//zenrpc:400 Validation Error
+//zenrpc:500 Internal Error
+func (s CandidateService) SetReady(ctx context.Context, candidateStageID int, isReady bool) (*CandidateStage, error) {
+	admin := AdminFromContext(ctx)
+	cand := CandidateFromContext(ctx)
+	if admin == nil && cand == nil {
+		return nil, ErrUnauthorized
+	}
+
+	cur, err := s.repo.CandidateStageByID(ctx, candidateStageID, s.repo.FullCandidateStage())
+	if err != nil {
+		return nil, InternalError(err)
+	}
+	if cur == nil {
+		return nil, ErrCandidateStageNotFound
+	}
+	if admin == nil && cur.CandidateID != cand.ID {
+		return nil, ErrForbidden
+	}
+
+	if isReady && (cur.Link == nil || strings.TrimSpace(*cur.Link) == "") {
+		return nil, ErrLinkRequiredForReady
+	}
+
+	switch {
+	case isReady:
+		now := time.Now()
+		cur.IsReady = true
+		cur.SetReadyAt = &now
+		if _, err = s.repo.UpdateCandidateStage(ctx, cur,
+			db.WithColumns(db.Columns.CandidateStage.IsReady, db.Columns.CandidateStage.SetReadyAt)); err != nil {
+			return nil, InternalError(err)
+		}
+	case admin != nil:
+		// Atomic admin retract: retries++ only when row was actually ready
+		// at UPDATE time. Avoids lost-update on concurrent admin clicks.
+		if _, err = s.repo.UnsetReadyAndBumpRetries(ctx, cur.ID); err != nil {
+			return nil, InternalError(err)
+		}
+	default:
+		// Candidate retracts: plain unset, no retries bump.
+		cur.IsReady = false
+		cur.SetReadyAt = nil
+		if _, err = s.repo.UpdateCandidateStage(ctx, cur,
+			db.WithColumns(db.Columns.CandidateStage.IsReady, db.Columns.CandidateStage.SetReadyAt)); err != nil {
+			return nil, InternalError(err)
+		}
+	}
+
+	// Re-fetch so the response and log carry post-UPDATE state — needed for
+	// the admin-retract branch (atomic UPDATE bumps retries directly in DB),
+	// uniform across branches keeps the code straight.
+	cur, err = s.repo.CandidateStageByID(ctx, candidateStageID, s.repo.FullCandidateStage())
+	if err != nil {
+		return nil, InternalError(err)
+	}
+	if cur == nil {
+		return nil, ErrCandidateStageNotFound
+	}
+	s.Print(ctx, "candidate stage ready set",
+		"candidateStageId", cur.ID, "candidateId", cur.CandidateID, "stageId", cur.StageID,
+		"isReady", cur.IsReady, "retries", cur.Retries)
+	return NewCandidateStage(cur), nil
+}
+
 // SetAvatarURL attaches or detaches avatarUrl on a Candidate (admin or self-candidate).
 // avatarUrl param name (vs avatarURL) is intentional: zenrpc reuses it as the
 // JSON tag, and Candidate.AvatarURL ships json:avatarUrl — keep them in sync.
@@ -887,9 +969,12 @@ func newCandidateStageSummary(cs *db.CandidateStage) *CandidateStageSummary {
 		return nil
 	}
 	return &CandidateStageSummary{
-		Link:      cs.Link,
-		Deadline:  formatTimePtr(cs.Deadline),
-		CreatedAt: formatTime(cs.CreatedAt),
+		Link:       cs.Link,
+		Deadline:   formatTimePtr(cs.Deadline),
+		CreatedAt:  formatTime(cs.CreatedAt),
+		IsReady:    cs.IsReady,
+		SetReadyAt: formatTimePtr(cs.SetReadyAt),
+		Retries:    cs.Retries,
 	}
 }
 

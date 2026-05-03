@@ -12,7 +12,7 @@ import (
 
 var RPC = struct {
 	AuthService      struct{ Login, Me, Register string }
-	CandidateService struct{ Get, GetByID, Add, Update, Delete, Advance, Rate, Rollback, SetLink, SetAvatarURL, Kanban string }
+	CandidateService struct{ Get, GetByID, Add, Update, Delete, Advance, Rate, Rollback, SetLink, SetReady, SetAvatarURL, Kanban string }
 	DashboardService struct{ Summary string }
 	StageService     struct{ Get, GetByID, Add, Update, Delete, Reorder string }
 }{
@@ -21,7 +21,7 @@ var RPC = struct {
 		Me:       "me",
 		Register: "register",
 	},
-	CandidateService: struct{ Get, GetByID, Add, Update, Delete, Advance, Rate, Rollback, SetLink, SetAvatarURL, Kanban string }{
+	CandidateService: struct{ Get, GetByID, Add, Update, Delete, Advance, Rate, Rollback, SetLink, SetReady, SetAvatarURL, Kanban string }{
 		Get:          "get",
 		GetByID:      "getbyid",
 		Add:          "add",
@@ -31,6 +31,7 @@ var RPC = struct {
 		Rate:         "rate",
 		Rollback:     "rollback",
 		SetLink:      "setlink",
+		SetReady:     "setready",
 		SetAvatarURL: "setavatarurl",
 		Kanban:       "kanban",
 	},
@@ -360,6 +361,19 @@ func (CandidateService) SMD() smd.ServiceInfo {
 									Name: "createdAt",
 									Type: smd.String,
 								},
+								{
+									Name: "isReady",
+									Type: smd.Boolean,
+								},
+								{
+									Name:     "setReadyAt",
+									Optional: true,
+									Type:     smd.String,
+								},
+								{
+									Name: "retries",
+									Type: smd.Integer,
+								},
 							},
 						},
 					},
@@ -531,6 +545,19 @@ func (CandidateService) SMD() smd.ServiceInfo {
 									Name: "createdAt",
 									Type: smd.String,
 								},
+								{
+									Name: "isReady",
+									Type: smd.Boolean,
+								},
+								{
+									Name:     "setReadyAt",
+									Optional: true,
+									Type:     smd.String,
+								},
+								{
+									Name: "retries",
+									Type: smd.Integer,
+								},
 							},
 						},
 						"CandidateStageHistory": {
@@ -583,6 +610,19 @@ func (CandidateService) SMD() smd.ServiceInfo {
 									Name:     "createdAt",
 									Optional: true,
 									Type:     smd.String,
+								},
+								{
+									Name: "isReady",
+									Type: smd.Boolean,
+								},
+								{
+									Name:     "setReadyAt",
+									Optional: true,
+									Type:     smd.String,
+								},
+								{
+									Name: "retries",
+									Type: smd.Integer,
 								},
 							},
 						},
@@ -1031,6 +1071,19 @@ func (CandidateService) SMD() smd.ServiceInfo {
 									Name: "createdAt",
 									Type: smd.String,
 								},
+								{
+									Name: "isReady",
+									Type: smd.Boolean,
+								},
+								{
+									Name:     "setReadyAt",
+									Optional: true,
+									Type:     smd.String,
+								},
+								{
+									Name: "retries",
+									Type: smd.Integer,
+								},
 							},
 						},
 					},
@@ -1095,6 +1148,19 @@ func (CandidateService) SMD() smd.ServiceInfo {
 						{
 							Name: "createdAt",
 							Type: smd.String,
+						},
+						{
+							Name: "isReady",
+							Type: smd.Boolean,
+						},
+						{
+							Name:     "setReadyAt",
+							Optional: true,
+							Type:     smd.String,
+						},
+						{
+							Name: "retries",
+							Type: smd.Integer,
 						},
 					},
 				},
@@ -1254,6 +1320,99 @@ func (CandidateService) SMD() smd.ServiceInfo {
 						{
 							Name: "createdAt",
 							Type: smd.String,
+						},
+						{
+							Name: "isReady",
+							Type: smd.Boolean,
+						},
+						{
+							Name:     "setReadyAt",
+							Optional: true,
+							Type:     smd.String,
+						},
+						{
+							Name: "retries",
+							Type: smd.Integer,
+						},
+					},
+				},
+				Errors: map[int]string{
+					401: "Unauthorized",
+					403: "Forbidden",
+					404: "Not Found",
+					400: "Validation Error",
+					500: "Internal Error",
+				},
+			},
+			"SetReady": {
+				Description: `SetReady toggles isReady on a CandidateStage (admin or self-candidate).
+Setting isReady=true requires a non-empty link. isReady=false has no
+preconditions; allowed at any time, including after the stage is scored.`,
+				Parameters: []smd.JSONSchema{
+					{
+						Name: "candidateStageID",
+						Type: smd.Integer,
+					},
+					{
+						Name:        "isReady",
+						Description: `bool`,
+						Type:        smd.Boolean,
+					},
+				},
+				Returns: smd.JSONSchema{
+					Description: `CandidateStage`,
+					Optional:    true,
+					Type:        smd.Object,
+					TypeName:    "CandidateStage",
+					Properties: smd.PropertyList{
+						{
+							Name: "id",
+							Type: smd.Integer,
+						},
+						{
+							Name: "candidateId",
+							Type: smd.Integer,
+						},
+						{
+							Name: "stageId",
+							Type: smd.Integer,
+						},
+						{
+							Name:     "link",
+							Optional: true,
+							Type:     smd.String,
+						},
+						{
+							Name:     "score",
+							Optional: true,
+							Type:     smd.Integer,
+						},
+						{
+							Name:     "scoredAt",
+							Optional: true,
+							Type:     smd.String,
+						},
+						{
+							Name:     "deadline",
+							Optional: true,
+							Type:     smd.String,
+						},
+						{
+							Name: "createdAt",
+							Type: smd.String,
+						},
+						{
+							Name: "isReady",
+							Type: smd.Boolean,
+						},
+						{
+							Name:     "setReadyAt",
+							Optional: true,
+							Type:     smd.String,
+						},
+						{
+							Name: "retries",
+							Type: smd.Integer,
 						},
 					},
 				},
@@ -1539,6 +1698,19 @@ JSON tag, and Candidate.AvatarURL ships json:avatarUrl — keep them in sync.`,
 									Name: "createdAt",
 									Type: smd.String,
 								},
+								{
+									Name: "isReady",
+									Type: smd.Boolean,
+								},
+								{
+									Name:     "setReadyAt",
+									Optional: true,
+									Type:     smd.String,
+								},
+								{
+									Name: "retries",
+									Type: smd.Integer,
+								},
 							},
 						},
 					},
@@ -1730,6 +1902,26 @@ func (s CandidateService) Invoke(ctx context.Context, method string, params json
 		}
 
 		resp.Set(s.SetLink(ctx, args.CandidateStageID, args.Link))
+
+	case RPC.CandidateService.SetReady:
+		var args = struct {
+			CandidateStageID int  `json:"candidateStageID"`
+			IsReady          bool `json:"isReady"`
+		}{}
+
+		if zenrpc.IsArray(params) {
+			if params, err = zenrpc.ConvertToObject([]string{"candidateStageID", "isReady"}, params); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &args); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		resp.Set(s.SetReady(ctx, args.CandidateStageID, args.IsReady))
 
 	case RPC.CandidateService.SetAvatarURL:
 		var args = struct {

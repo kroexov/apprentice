@@ -135,7 +135,8 @@ func isRegisteredMethod(ns, method string) bool {
 	switch ns {
 	case NSCandidate:
 		return method == RPC.CandidateService.SetLink ||
-			method == RPC.CandidateService.SetAvatarURL
+			method == RPC.CandidateService.SetAvatarURL ||
+			method == RPC.CandidateService.SetReady
 	case NSAuth:
 		return method == RPC.AuthService.Me
 	}

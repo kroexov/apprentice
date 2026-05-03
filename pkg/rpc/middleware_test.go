@@ -372,6 +372,179 @@ func TestDB_CandidateService_SetAvatarURL(t *testing.T) {
 	})
 }
 
+// TestDB_CandidateService_SetReady covers candidate.setready across the same
+// auth tiers as SetLink: anonymous→401, admin OK, self-candidate OK, other
+// candidate→403, plus link-required validation, false-without-link, and
+// toggling allowed after the stage is scored.
+func TestDB_CandidateService_SetReady(t *testing.T) {
+	Convey("candidate.setready", t, func() {
+		hs, dbo := newHTTPHarness(t)
+		ctx := t.Context()
+
+		adminKey := seedAdmin(t, ctx, dbo, "admin.ready")
+
+		stageResp := rpcCall(t, hs, adminKey, NSStage, RPC.StageService.Add, map[string]any{
+			"alias": "s1", "order": 1, "title": "t", "shortTitle": "s", "maxScore": 10,
+		})
+		So(stageResp.Error, ShouldBeNil)
+
+		ownerCand, ownerKey := registerCandidate(t, ctx, hs, dbo, "owner.ready")
+		_, otherKey := registerCandidate(t, ctx, hs, dbo, "other.ready")
+
+		repo := db.NewApprenticeRepo(dbo)
+		csList, err := repo.CandidateStagesByFilters(ctx,
+			&db.CandidateStageSearch{CandidateID: &ownerCand.ID}, db.PagerNoLimit)
+		So(err, ShouldBeNil)
+		So(csList, ShouldHaveLength, 1)
+		csID := csList[0].ID
+
+		// attachLink prepares the row so SetReady(true) is permitted.
+		attachLink := func(key string) {
+			r := rpcCall(t, hs, key, NSCandidate, RPC.CandidateService.SetLink, csID, "https://example.com/x")
+			So(r.Error, ShouldBeNil)
+		}
+
+		Convey("anonymous → 401", func() {
+			r := rpcCall(t, hs, "", NSCandidate, RPC.CandidateService.SetReady, csID, true)
+			So(r.Error, ShouldNotBeNil)
+			So(r.Error.Code, ShouldEqual, http.StatusUnauthorized)
+		})
+
+		Convey("setReady=true without link → 400", func() {
+			r := rpcCall(t, hs, ownerKey, NSCandidate, RPC.CandidateService.SetReady, csID, true)
+			So(r.Error, ShouldNotBeNil)
+			So(r.Error.Code, ShouldEqual, http.StatusBadRequest)
+		})
+
+		Convey("setReady=false without link → 200 (no preconditions)", func() {
+			r := rpcCall(t, hs, ownerKey, NSCandidate, RPC.CandidateService.SetReady, csID, false)
+			So(r.Error, ShouldBeNil)
+		})
+
+		Convey("admin can toggle on any candidateStage", func() {
+			attachLink(adminKey)
+			r := rpcCall(t, hs, adminKey, NSCandidate, RPC.CandidateService.SetReady, csID, true)
+			So(r.Error, ShouldBeNil)
+
+			updated, err := repo.CandidateStageByID(ctx, csID, repo.FullCandidateStage())
+			So(err, ShouldBeNil)
+			So(updated.IsReady, ShouldBeTrue)
+			So(updated.SetReadyAt, ShouldNotBeNil)
+			So(updated.Retries, ShouldEqual, 0)
+		})
+
+		Convey("candidate can toggle on own candidateStage", func() {
+			attachLink(ownerKey)
+			r := rpcCall(t, hs, ownerKey, NSCandidate, RPC.CandidateService.SetReady, csID, true)
+			So(r.Error, ShouldBeNil)
+
+			updated, err := repo.CandidateStageByID(ctx, csID, repo.FullCandidateStage())
+			So(err, ShouldBeNil)
+			So(updated.IsReady, ShouldBeTrue)
+			So(updated.SetReadyAt, ShouldNotBeNil)
+
+			r = rpcCall(t, hs, ownerKey, NSCandidate, RPC.CandidateService.SetReady, csID, false)
+			So(r.Error, ShouldBeNil)
+			updated, err = repo.CandidateStageByID(ctx, csID, repo.FullCandidateStage())
+			So(err, ShouldBeNil)
+			So(updated.IsReady, ShouldBeFalse)
+			So(updated.SetReadyAt, ShouldBeNil)
+			// candidate retracting must NOT bump retries.
+			So(updated.Retries, ShouldEqual, 0)
+		})
+
+		Convey("admin false after candidate true → retries++", func() {
+			attachLink(ownerKey)
+			r := rpcCall(t, hs, ownerKey, NSCandidate, RPC.CandidateService.SetReady, csID, true)
+			So(r.Error, ShouldBeNil)
+
+			r = rpcCall(t, hs, adminKey, NSCandidate, RPC.CandidateService.SetReady, csID, false)
+			So(r.Error, ShouldBeNil)
+
+			updated, err := repo.CandidateStageByID(ctx, csID, repo.FullCandidateStage())
+			So(err, ShouldBeNil)
+			So(updated.IsReady, ShouldBeFalse)
+			So(updated.SetReadyAt, ShouldBeNil)
+			So(updated.Retries, ShouldEqual, 1)
+		})
+
+		Convey("admin double false is idempotent (no extra retries)", func() {
+			attachLink(ownerKey)
+			r := rpcCall(t, hs, ownerKey, NSCandidate, RPC.CandidateService.SetReady, csID, true)
+			So(r.Error, ShouldBeNil)
+
+			r = rpcCall(t, hs, adminKey, NSCandidate, RPC.CandidateService.SetReady, csID, false)
+			So(r.Error, ShouldBeNil)
+			r = rpcCall(t, hs, adminKey, NSCandidate, RPC.CandidateService.SetReady, csID, false)
+			So(r.Error, ShouldBeNil)
+
+			updated, err := repo.CandidateStageByID(ctx, csID, repo.FullCandidateStage())
+			So(err, ShouldBeNil)
+			So(updated.Retries, ShouldEqual, 1)
+		})
+
+		Convey("retries persists across setReady(true)", func() {
+			attachLink(ownerKey)
+			// Build up retries=1 via owner→true, admin→false.
+			r := rpcCall(t, hs, ownerKey, NSCandidate, RPC.CandidateService.SetReady, csID, true)
+			So(r.Error, ShouldBeNil)
+			r = rpcCall(t, hs, adminKey, NSCandidate, RPC.CandidateService.SetReady, csID, false)
+			So(r.Error, ShouldBeNil)
+
+			// Setting ready again must keep the cumulative counter.
+			r = rpcCall(t, hs, ownerKey, NSCandidate, RPC.CandidateService.SetReady, csID, true)
+			So(r.Error, ShouldBeNil)
+
+			updated, err := repo.CandidateStageByID(ctx, csID, repo.FullCandidateStage())
+			So(err, ShouldBeNil)
+			So(updated.IsReady, ShouldBeTrue)
+			So(updated.SetReadyAt, ShouldNotBeNil)
+			So(updated.Retries, ShouldEqual, 1)
+		})
+
+		Convey("candidate cannot toggle on someone else's candidateStage → 403", func() {
+			attachLink(adminKey)
+			r := rpcCall(t, hs, otherKey, NSCandidate, RPC.CandidateService.SetReady, csID, true)
+			So(r.Error, ShouldNotBeNil)
+			So(r.Error.Code, ShouldEqual, http.StatusForbidden)
+		})
+
+		Convey("unknown candidateStageId → 404", func() {
+			r := rpcCall(t, hs, adminKey, NSCandidate, RPC.CandidateService.SetReady, 99999, true)
+			So(r.Error, ShouldNotBeNil)
+			So(r.Error.Code, ShouldEqual, http.StatusNotFound)
+		})
+
+		Convey("toggle allowed after rate (Score != nil)", func() {
+			attachLink(ownerKey)
+			r := rpcCall(t, hs, adminKey, NSCandidate, RPC.CandidateService.Rate, csID, 5)
+			So(r.Error, ShouldBeNil)
+
+			r = rpcCall(t, hs, ownerKey, NSCandidate, RPC.CandidateService.SetReady, csID, true)
+			So(r.Error, ShouldBeNil)
+		})
+
+		Convey("whitespace-only link is treated as missing → 400", func() {
+			// Inserting whitespace via repo bypasses SetLink's normaliser on
+			// purpose: this kept-around guard exercises SetReady's *own*
+			// TrimSpace check. If a future refactor removes that check and
+			// leans on SetLink to scrub whitespace, this test catches the
+			// regression. Reachable via API only if SetLink ever stops
+			// normalising.
+			cs, err := repo.CandidateStageByID(ctx, csID)
+			So(err, ShouldBeNil)
+			blank := "   "
+			cs.Link = &blank
+			_, err = repo.UpdateCandidateStage(ctx, cs, db.WithColumns(db.Columns.CandidateStage.Link))
+			So(err, ShouldBeNil)
+
+			r := rpcCall(t, hs, ownerKey, NSCandidate, RPC.CandidateService.SetReady, csID, true)
+			So(r.Error, ShouldNotBeNil)
+			So(r.Error.Code, ShouldEqual, http.StatusBadRequest)
+		})
+	})
+}
+
 // TestDB_AuthService_Me covers auth.me end-to-end: anonymous is rejected, admin
 // and candidate principals each round-trip their own login + userType.
 func TestDB_AuthService_Me(t *testing.T) {

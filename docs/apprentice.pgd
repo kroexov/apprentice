@@ -162,6 +162,12 @@
               comment="users.userId — кто поставил оценку (на вырост)"></column>
       <column name="deadline" type="timestamptz" nullable="true"
               comment="крайний срок прохождения; вычисляется как createdAt + stages.deadlineDays"></column>
+      <column name="isReady" type="boolean" nullable="false" default="false"
+              comment="кандидат отметил, что задание готово к проверке"></column>
+      <column name="setReadyAt" type="timestamptz" nullable="true"
+              comment="момент последней установки isReady=true; null когда isReady снят"></column>
+      <column name="retries" type="integer" nullable="false" default="0"
+              comment="сколько раз админ снимал isReady=true (отправлял на доработку)"></column>
       <column name="createdAt" type="timestamptz" nullable="false" default="now()"
               comment="момент попадания кандидата на этап"></column>
       <pk name="candidateStages_pkey">

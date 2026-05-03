@@ -28,7 +28,7 @@ var Columns = struct {
 		CurrentStage string
 	}
 	CandidateStage struct {
-		ID, CandidateID, StageID, Link, Score, ScoredAt, ScoredBy, Deadline, CreatedAt string
+		ID, CandidateID, StageID, Link, Score, ScoredAt, ScoredBy, Deadline, IsReady, SetReadyAt, Retries, CreatedAt string
 
 		Candidate, Stage string
 	}
@@ -109,7 +109,7 @@ var Columns = struct {
 		CurrentStage: "CurrentStage",
 	},
 	CandidateStage: struct {
-		ID, CandidateID, StageID, Link, Score, ScoredAt, ScoredBy, Deadline, CreatedAt string
+		ID, CandidateID, StageID, Link, Score, ScoredAt, ScoredBy, Deadline, IsReady, SetReadyAt, Retries, CreatedAt string
 
 		Candidate, Stage string
 	}{
@@ -121,6 +121,9 @@ var Columns = struct {
 		ScoredAt:    "scoredAt",
 		ScoredBy:    "scoredBy",
 		Deadline:    "deadline",
+		IsReady:     "isReady",
+		SetReadyAt:  "setReadyAt",
+		Retries:     "retries",
 		CreatedAt:   "createdAt",
 
 		Candidate: "Candidate",
@@ -280,6 +283,9 @@ type CandidateStage struct {
 	ScoredAt    *time.Time `pg:"scoredAt"`
 	ScoredBy    *int       `pg:"scoredBy"`
 	Deadline    *time.Time `pg:"deadline"`
+	IsReady     bool       `pg:"isReady,use_zero"`
+	SetReadyAt  *time.Time `pg:"setReadyAt"`
+	Retries     int        `pg:"retries,use_zero"`
 	CreatedAt   time.Time  `pg:"createdAt,use_zero"`
 
 	Candidate *Candidate `pg:"fk:candidateId,rel:has-one"`
