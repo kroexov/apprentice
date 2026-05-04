@@ -332,3 +332,123 @@ type Summary struct {
 	MaxPoints       int     `json:"maxPoints"`
 	AverageOrder    float64 `json:"averageOrder"`
 }
+
+// ============================================================================
+// Material
+// ============================================================================
+
+// Material — теоретический материал из общего каталога.
+type Material struct {
+	ID          int    `json:"id"`
+	Title       string `json:"title"`
+	Type        string `json:"type"`
+	URL         string `json:"url"`
+	Description string `json:"description"`
+	MaxScore    int    `json:"maxScore"`
+	Order       int    `json:"order"`
+	CreatedAt   string `json:"createdAt"`
+	UpdatedAt   string `json:"updatedAt"`
+}
+
+func NewMaterial(d *db.Material) *Material {
+	if d == nil {
+		return nil
+	}
+	return &Material{
+		ID:          d.ID,
+		Title:       d.Title,
+		Type:        d.Type,
+		URL:         d.Url,
+		Description: d.Description,
+		MaxScore:    d.MaxScore,
+		Order:       d.Order,
+		CreatedAt:   formatTime(d.CreatedAt),
+		UpdatedAt:   formatTime(d.UpdatedAt),
+	}
+}
+
+// MaterialInput — поля, которые админ передаёт при Add/Update.
+// MaxScore=nil → дефолт 10 (на Add) или сохранение прежнего значения (на Update).
+// Order=nil → MAX(order)+1 среди активных материалов на Add, либо сохранение
+// прежнего значения на Update.
+type MaterialInput struct {
+	Title       string `json:"title"`
+	Type        string `json:"type"`
+	URL         string `json:"url"`
+	Description string `json:"description"`
+	MaxScore    *int   `json:"maxScore"`
+	Order       *int   `json:"order"`
+}
+
+// CandidateMaterial — прогресс кандидата по конкретному материалу.
+type CandidateMaterial struct {
+	ID          int     `json:"id"`
+	CandidateID int     `json:"candidateId"`
+	MaterialID  int     `json:"materialId"`
+	ReadAt      *string `json:"readAt"`
+	Score       *int    `json:"score"`
+	ScoredAt    *string `json:"scoredAt"`
+	ScoredBy    *int    `json:"scoredBy"`
+	Notes       *string `json:"notes"`
+	CreatedAt   string  `json:"createdAt"`
+}
+
+func NewCandidateMaterial(d *db.CandidateMaterial) *CandidateMaterial {
+	if d == nil {
+		return nil
+	}
+	return &CandidateMaterial{
+		ID:          d.ID,
+		CandidateID: d.CandidateID,
+		MaterialID:  d.MaterialID,
+		ReadAt:      formatTimePtr(d.ReadAt),
+		Score:       d.Score,
+		ScoredAt:    formatTimePtr(d.ScoredAt),
+		ScoredBy:    d.ScoredBy,
+		Notes:       d.Notes,
+		CreatedAt:   formatTime(d.CreatedAt),
+	}
+}
+
+// CandidateBrief — компактный кандидат для матрицы прогресса. Без bio/login,
+// чтобы не раздувать ответ getProgress.
+type CandidateBrief struct {
+	ID             int     `json:"id"`
+	Name           string  `json:"name"`
+	Handle         string  `json:"handle"`
+	AvatarColor    string  `json:"avatarColor"`
+	Initials       string  `json:"initials"`
+	AvatarURL      *string `json:"avatarUrl"`
+	CurrentStageID int     `json:"currentStageId"`
+}
+
+func NewCandidateBrief(d *db.Candidate) *CandidateBrief {
+	if d == nil {
+		return nil
+	}
+	return &CandidateBrief{
+		ID:             d.ID,
+		Name:           d.Name,
+		Handle:         d.Handle,
+		AvatarColor:    d.AvatarColor,
+		Initials:       d.Initials,
+		AvatarURL:      d.AvatarUrl,
+		CurrentStageID: d.CurrentStageID,
+	}
+}
+
+// MaterialsProgress — публичная «доска прогресса». Клиент строит матрицу по
+// (candidateId, materialId). Записи в Progress содержат только реально
+// существующие в БД отметки; ячейки без записи трактуются как «не отмечен».
+type MaterialsProgress struct {
+	Materials  []Material          `json:"materials"`
+	Candidates []CandidateBrief    `json:"candidates"`
+	Progress   []CandidateMaterial `json:"progress"`
+}
+
+// MyMaterialProgress — материал плюс прогресс текущего кандидата по нему.
+// Progress=nil означает, что кандидат ещё не отмечал.
+type MyMaterialProgress struct {
+	Material Material           `json:"material"`
+	Progress *CandidateMaterial `json:"progress"`
+}

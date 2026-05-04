@@ -35,6 +35,14 @@ var Columns = struct {
 	Stage struct {
 		ID, Alias, Order, Title, ShortTitle, Description, MaxScore, DeadlineDays, StatusID string
 	}
+	CandidateMaterial struct {
+		ID, CandidateID, MaterialID, ReadAt, Score, ScoredAt, ScoredBy, Notes, CreatedAt string
+
+		Candidate, Material string
+	}
+	Material struct {
+		ID, Title, Type, Url, Description, MaxScore, Order, StatusID, CreatedAt, UpdatedAt string
+	}
 }{
 	User: struct {
 		ID, CreatedAt, Login, Password, AuthKey, LastActivityAt, StatusID string
@@ -142,6 +150,38 @@ var Columns = struct {
 		DeadlineDays: "deadlineDays",
 		StatusID:     "statusId",
 	},
+	CandidateMaterial: struct {
+		ID, CandidateID, MaterialID, ReadAt, Score, ScoredAt, ScoredBy, Notes, CreatedAt string
+
+		Candidate, Material string
+	}{
+		ID:          "candidateMaterialId",
+		CandidateID: "candidateId",
+		MaterialID:  "materialId",
+		ReadAt:      "readAt",
+		Score:       "score",
+		ScoredAt:    "scoredAt",
+		ScoredBy:    "scoredBy",
+		Notes:       "notes",
+		CreatedAt:   "createdAt",
+
+		Candidate: "Candidate",
+		Material:  "Material",
+	},
+	Material: struct {
+		ID, Title, Type, Url, Description, MaxScore, Order, StatusID, CreatedAt, UpdatedAt string
+	}{
+		ID:          "materialId",
+		Title:       "title",
+		Type:        "type",
+		Url:         "url",
+		Description: "description",
+		MaxScore:    "maxScore",
+		Order:       "order",
+		StatusID:    "statusId",
+		CreatedAt:   "createdAt",
+		UpdatedAt:   "updatedAt",
+	},
 }
 
 var Tables = struct {
@@ -161,6 +201,12 @@ var Tables = struct {
 		Name, Alias string
 	}
 	Stage struct {
+		Name, Alias string
+	}
+	CandidateMaterial struct {
+		Name, Alias string
+	}
+	Material struct {
 		Name, Alias string
 	}
 }{
@@ -198,6 +244,18 @@ var Tables = struct {
 		Name, Alias string
 	}{
 		Name:  "stages",
+		Alias: "t",
+	},
+	CandidateMaterial: struct {
+		Name, Alias string
+	}{
+		Name:  "candidateMaterials",
+		Alias: "t",
+	},
+	Material: struct {
+		Name, Alias string
+	}{
+		Name:  "materials",
 		Alias: "t",
 	},
 }
@@ -304,4 +362,36 @@ type Stage struct {
 	MaxScore     int    `pg:"maxScore,use_zero"`
 	DeadlineDays int    `pg:"deadlineDays,use_zero"`
 	StatusID     int    `pg:"statusId,use_zero"`
+}
+
+type CandidateMaterial struct {
+	tableName struct{} `pg:"candidateMaterials,alias:t,discard_unknown_columns"`
+
+	ID          int        `pg:"candidateMaterialId,pk"`
+	CandidateID int        `pg:"candidateId,use_zero"`
+	MaterialID  int        `pg:"materialId,use_zero"`
+	ReadAt      *time.Time `pg:"readAt"`
+	Score       *int       `pg:"score"`
+	ScoredAt    *time.Time `pg:"scoredAt"`
+	ScoredBy    *int       `pg:"scoredBy"`
+	Notes       *string    `pg:"notes"`
+	CreatedAt   time.Time  `pg:"createdAt,use_zero"`
+
+	Candidate *Candidate `pg:"fk:candidateId,rel:has-one"`
+	Material  *Material  `pg:"fk:materialId,rel:has-one"`
+}
+
+type Material struct {
+	tableName struct{} `pg:"materials,alias:t,discard_unknown_columns"`
+
+	ID          int       `pg:"materialId,pk"`
+	Title       string    `pg:"title,use_zero"`
+	Type        string    `pg:"type,use_zero"`
+	Url         string    `pg:"url,use_zero"`
+	Description string    `pg:"description,use_zero"`
+	MaxScore    int       `pg:"maxScore,use_zero"`
+	Order       int       `pg:"order,use_zero"`
+	StatusID    int       `pg:"statusId,use_zero"`
+	CreatedAt   time.Time `pg:"createdAt,use_zero"`
+	UpdatedAt   time.Time `pg:"updatedAt,use_zero"`
 }

@@ -5,14 +5,14 @@
         <string>vfs</string>
         <string>apprentice</string>
     </PackageNames>
-    <TableMapping>
-        <common>users</common>
-        <vfs>vfsFiles,vfsFolders</vfs>
-        <apprentice>stages,candidates,candidateStages</apprentice>
-    </TableMapping>
     <Languages>
         <string>ru</string>
     </Languages>
     <GoPGVer>10</GoPGVer>
     <CustomTypes></CustomTypes>
+    <TableMapping>
+        <common>users</common>
+        <vfs>vfsFiles,vfsFolders</vfs>
+        <apprentice>stages,candidates,candidateStages,materials,candidateMaterials</apprentice>
+    </TableMapping>
 </Project>

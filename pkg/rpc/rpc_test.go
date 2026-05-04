@@ -20,6 +20,7 @@ type rpcFixtures struct {
 	stage     *StageService
 	dashboard *DashboardService
 	auth      *AuthService
+	material  *MaterialService
 }
 
 func newRPCFixtures(t *testing.T) rpcFixtures {
@@ -32,6 +33,7 @@ func newRPCFixtures(t *testing.T) rpcFixtures {
 		stage:     NewStageService(dbo, logger),
 		dashboard: NewDashboardService(dbo, logger),
 		auth:      NewAuthService(dbo, logger),
+		material:  NewMaterialService(dbo, logger),
 	}
 }
 
@@ -43,10 +45,13 @@ func resetApprenticeDB(t *testing.T, dbo db.DB) {
 	ctx := t.Context()
 	stmts := []string{
 		`TRUNCATE TABLE "candidateStages" RESTART IDENTITY CASCADE`,
+		`TRUNCATE TABLE "candidateMaterials" RESTART IDENTITY CASCADE`,
 		`DELETE FROM "candidates"`,
 		`ALTER SEQUENCE "candidates_candidateId_seq" RESTART WITH 1`,
 		`DELETE FROM "stages"`,
 		`ALTER SEQUENCE "stages_stageId_seq" RESTART WITH 1`,
+		`DELETE FROM "materials"`,
+		`ALTER SEQUENCE "materials_materialId_seq" RESTART WITH 1`,
 		`DELETE FROM "users" WHERE login <> 'admin'`,
 	}
 	for _, s := range stmts {

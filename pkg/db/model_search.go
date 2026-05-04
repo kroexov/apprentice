@@ -559,3 +559,155 @@ func (ss *StageSearch) Q() applier {
 		return ss.Apply(query), nil
 	}
 }
+
+type CandidateMaterialSearch struct {
+	search
+
+	ID          *int
+	CandidateID *int
+	MaterialID  *int
+	ReadAt      *time.Time
+	Score       *int
+	ScoredAt    *time.Time
+	ScoredBy    *int
+	Notes       *string
+	CreatedAt   *time.Time
+	IDs         []int
+	NotesILike  *string
+}
+
+func (cms *CandidateMaterialSearch) Apply(query *orm.Query) *orm.Query {
+	if cms == nil {
+		return query
+	}
+	if cms.ID != nil {
+		cms.where(query, Tables.CandidateMaterial.Alias, Columns.CandidateMaterial.ID, cms.ID)
+	}
+	if cms.CandidateID != nil {
+		cms.where(query, Tables.CandidateMaterial.Alias, Columns.CandidateMaterial.CandidateID, cms.CandidateID)
+	}
+	if cms.MaterialID != nil {
+		cms.where(query, Tables.CandidateMaterial.Alias, Columns.CandidateMaterial.MaterialID, cms.MaterialID)
+	}
+	if cms.ReadAt != nil {
+		cms.where(query, Tables.CandidateMaterial.Alias, Columns.CandidateMaterial.ReadAt, cms.ReadAt)
+	}
+	if cms.Score != nil {
+		cms.where(query, Tables.CandidateMaterial.Alias, Columns.CandidateMaterial.Score, cms.Score)
+	}
+	if cms.ScoredAt != nil {
+		cms.where(query, Tables.CandidateMaterial.Alias, Columns.CandidateMaterial.ScoredAt, cms.ScoredAt)
+	}
+	if cms.ScoredBy != nil {
+		cms.where(query, Tables.CandidateMaterial.Alias, Columns.CandidateMaterial.ScoredBy, cms.ScoredBy)
+	}
+	if cms.Notes != nil {
+		cms.where(query, Tables.CandidateMaterial.Alias, Columns.CandidateMaterial.Notes, cms.Notes)
+	}
+	if cms.CreatedAt != nil {
+		cms.where(query, Tables.CandidateMaterial.Alias, Columns.CandidateMaterial.CreatedAt, cms.CreatedAt)
+	}
+	if len(cms.IDs) > 0 {
+		Filter{Columns.CandidateMaterial.ID, cms.IDs, SearchTypeArray, false}.Apply(query)
+	}
+	if cms.NotesILike != nil {
+		Filter{Columns.CandidateMaterial.Notes, *cms.NotesILike, SearchTypeILike, false}.Apply(query)
+	}
+
+	cms.apply(query)
+
+	return query
+}
+
+func (cms *CandidateMaterialSearch) Q() applier {
+	return func(query *orm.Query) (*orm.Query, error) {
+		if cms == nil {
+			return query, nil
+		}
+		return cms.Apply(query), nil
+	}
+}
+
+type MaterialSearch struct {
+	search
+
+	ID               *int
+	Title            *string
+	Type             *string
+	Url              *string
+	Description      *string
+	MaxScore         *int
+	Order            *int
+	StatusID         *int
+	CreatedAt        *time.Time
+	UpdatedAt        *time.Time
+	IDs              []int
+	TitleILike       *string
+	TypeILike        *string
+	UrlILike         *string
+	DescriptionILike *string
+}
+
+func (ms *MaterialSearch) Apply(query *orm.Query) *orm.Query {
+	if ms == nil {
+		return query
+	}
+	if ms.ID != nil {
+		ms.where(query, Tables.Material.Alias, Columns.Material.ID, ms.ID)
+	}
+	if ms.Title != nil {
+		ms.where(query, Tables.Material.Alias, Columns.Material.Title, ms.Title)
+	}
+	if ms.Type != nil {
+		ms.where(query, Tables.Material.Alias, Columns.Material.Type, ms.Type)
+	}
+	if ms.Url != nil {
+		ms.where(query, Tables.Material.Alias, Columns.Material.Url, ms.Url)
+	}
+	if ms.Description != nil {
+		ms.where(query, Tables.Material.Alias, Columns.Material.Description, ms.Description)
+	}
+	if ms.MaxScore != nil {
+		ms.where(query, Tables.Material.Alias, Columns.Material.MaxScore, ms.MaxScore)
+	}
+	if ms.Order != nil {
+		ms.where(query, Tables.Material.Alias, Columns.Material.Order, ms.Order)
+	}
+	if ms.StatusID != nil {
+		ms.where(query, Tables.Material.Alias, Columns.Material.StatusID, ms.StatusID)
+	}
+	if ms.CreatedAt != nil {
+		ms.where(query, Tables.Material.Alias, Columns.Material.CreatedAt, ms.CreatedAt)
+	}
+	if ms.UpdatedAt != nil {
+		ms.where(query, Tables.Material.Alias, Columns.Material.UpdatedAt, ms.UpdatedAt)
+	}
+	if len(ms.IDs) > 0 {
+		Filter{Columns.Material.ID, ms.IDs, SearchTypeArray, false}.Apply(query)
+	}
+	if ms.TitleILike != nil {
+		Filter{Columns.Material.Title, *ms.TitleILike, SearchTypeILike, false}.Apply(query)
+	}
+	if ms.TypeILike != nil {
+		Filter{Columns.Material.Type, *ms.TypeILike, SearchTypeILike, false}.Apply(query)
+	}
+	if ms.UrlILike != nil {
+		Filter{Columns.Material.Url, *ms.UrlILike, SearchTypeILike, false}.Apply(query)
+	}
+	if ms.DescriptionILike != nil {
+		Filter{Columns.Material.Description, *ms.DescriptionILike, SearchTypeILike, false}.Apply(query)
+	}
+
+	ms.apply(query)
+
+	return query
+}
+
+func (ms *MaterialSearch) Q() applier {
+	return func(query *orm.Query) (*orm.Query, error) {
+		if ms == nil {
+			return query, nil
+		}
+		return ms.Apply(query), nil
+	}
+}

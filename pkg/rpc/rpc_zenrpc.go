@@ -14,6 +14,7 @@ var RPC = struct {
 	AuthService      struct{ Login, Me, Register string }
 	CandidateService struct{ Get, GetByID, Add, Update, Delete, Advance, Rate, Rollback, SetLink, SetReady, SetAvatarURL, Kanban string }
 	DashboardService struct{ Summary string }
+	MaterialService  struct{ Get, GetByID, Add, Update, Delete, SetRead, GetProgress, GetMyProgress, Score, Unscore string }
 	StageService     struct{ Get, GetByID, Add, Update, Delete, Reorder string }
 }{
 	AuthService: struct{ Login, Me, Register string }{
@@ -37,6 +38,18 @@ var RPC = struct {
 	},
 	DashboardService: struct{ Summary string }{
 		Summary: "summary",
+	},
+	MaterialService: struct{ Get, GetByID, Add, Update, Delete, SetRead, GetProgress, GetMyProgress, Score, Unscore string }{
+		Get:           "get",
+		GetByID:       "getbyid",
+		Add:           "add",
+		Update:        "update",
+		Delete:        "delete",
+		SetRead:       "setread",
+		GetProgress:   "getprogress",
+		GetMyProgress: "getmyprogress",
+		Score:         "score",
+		Unscore:       "unscore",
 	},
 	StageService: struct{ Get, GetByID, Add, Update, Delete, Reorder string }{
 		Get:     "get",
@@ -2002,6 +2015,981 @@ func (s DashboardService) Invoke(ctx context.Context, method string, params json
 	switch method {
 	case RPC.DashboardService.Summary:
 		resp.Set(s.Summary(ctx))
+
+	default:
+		resp = zenrpc.NewResponseError(nil, zenrpc.MethodNotFound, "", nil)
+	}
+
+	return resp
+}
+
+func (MaterialService) SMD() smd.ServiceInfo {
+	return smd.ServiceInfo{
+		Methods: map[string]smd.Service{
+			"Get": {
+				Description: `Get returns the active materials catalog ordered by order, then title.`,
+				Parameters: []smd.JSONSchema{
+					{
+						Name:        "view",
+						Optional:    true,
+						Description: `*ViewOps`,
+						Type:        smd.Object,
+						TypeName:    "ViewOps",
+						Properties: smd.PropertyList{
+							{
+								Name: "page",
+								Type: smd.Integer,
+							},
+							{
+								Name: "pageSize",
+								Type: smd.Integer,
+							},
+						},
+					},
+				},
+				Returns: smd.JSONSchema{
+					Description: `[]Material`,
+					Type:        smd.Array,
+					TypeName:    "[]Material",
+					Items: map[string]string{
+						"$ref": "#/definitions/Material",
+					},
+					Definitions: map[string]smd.Definition{
+						"Material": {
+							Type: "object",
+							Properties: smd.PropertyList{
+								{
+									Name: "id",
+									Type: smd.Integer,
+								},
+								{
+									Name: "title",
+									Type: smd.String,
+								},
+								{
+									Name: "type",
+									Type: smd.String,
+								},
+								{
+									Name: "url",
+									Type: smd.String,
+								},
+								{
+									Name: "description",
+									Type: smd.String,
+								},
+								{
+									Name: "maxScore",
+									Type: smd.Integer,
+								},
+								{
+									Name: "order",
+									Type: smd.Integer,
+								},
+								{
+									Name: "createdAt",
+									Type: smd.String,
+								},
+								{
+									Name: "updatedAt",
+									Type: smd.String,
+								},
+							},
+						},
+					},
+				},
+				Errors: map[int]string{
+					500: "Internal Error",
+				},
+			},
+			"GetByID": {
+				Description: `GetByID returns a single material by id.`,
+				Parameters: []smd.JSONSchema{
+					{
+						Name:        "id",
+						Description: `int`,
+						Type:        smd.Integer,
+					},
+				},
+				Returns: smd.JSONSchema{
+					Description: `Material`,
+					Optional:    true,
+					Type:        smd.Object,
+					TypeName:    "Material",
+					Properties: smd.PropertyList{
+						{
+							Name: "id",
+							Type: smd.Integer,
+						},
+						{
+							Name: "title",
+							Type: smd.String,
+						},
+						{
+							Name: "type",
+							Type: smd.String,
+						},
+						{
+							Name: "url",
+							Type: smd.String,
+						},
+						{
+							Name: "description",
+							Type: smd.String,
+						},
+						{
+							Name: "maxScore",
+							Type: smd.Integer,
+						},
+						{
+							Name: "order",
+							Type: smd.Integer,
+						},
+						{
+							Name: "createdAt",
+							Type: smd.String,
+						},
+						{
+							Name: "updatedAt",
+							Type: smd.String,
+						},
+					},
+				},
+				Errors: map[int]string{
+					404: "Not Found",
+					500: "Internal Error",
+				},
+			},
+			"Add": {
+				Description: `Add creates a material in the catalog (admin only).`,
+				Parameters: []smd.JSONSchema{
+					{
+						Name:        "input",
+						Description: `MaterialInput`,
+						Type:        smd.Object,
+						TypeName:    "MaterialInput",
+						Properties: smd.PropertyList{
+							{
+								Name: "title",
+								Type: smd.String,
+							},
+							{
+								Name: "type",
+								Type: smd.String,
+							},
+							{
+								Name: "url",
+								Type: smd.String,
+							},
+							{
+								Name: "description",
+								Type: smd.String,
+							},
+							{
+								Name:     "maxScore",
+								Optional: true,
+								Type:     smd.Integer,
+							},
+							{
+								Name:     "order",
+								Optional: true,
+								Type:     smd.Integer,
+							},
+						},
+					},
+				},
+				Returns: smd.JSONSchema{
+					Description: `Material`,
+					Optional:    true,
+					Type:        smd.Object,
+					TypeName:    "Material",
+					Properties: smd.PropertyList{
+						{
+							Name: "id",
+							Type: smd.Integer,
+						},
+						{
+							Name: "title",
+							Type: smd.String,
+						},
+						{
+							Name: "type",
+							Type: smd.String,
+						},
+						{
+							Name: "url",
+							Type: smd.String,
+						},
+						{
+							Name: "description",
+							Type: smd.String,
+						},
+						{
+							Name: "maxScore",
+							Type: smd.Integer,
+						},
+						{
+							Name: "order",
+							Type: smd.Integer,
+						},
+						{
+							Name: "createdAt",
+							Type: smd.String,
+						},
+						{
+							Name: "updatedAt",
+							Type: smd.String,
+						},
+					},
+				},
+				Errors: map[int]string{
+					400: "Validation Error",
+					500: "Internal Error",
+				},
+			},
+			"Update": {
+				Description: `Update edits a material (admin only). All fields from input replace the
+stored values.`,
+				Parameters: []smd.JSONSchema{
+					{
+						Name:        "id",
+						Description: `int`,
+						Type:        smd.Integer,
+					},
+					{
+						Name:        "input",
+						Description: `MaterialInput`,
+						Type:        smd.Object,
+						TypeName:    "MaterialInput",
+						Properties: smd.PropertyList{
+							{
+								Name: "title",
+								Type: smd.String,
+							},
+							{
+								Name: "type",
+								Type: smd.String,
+							},
+							{
+								Name: "url",
+								Type: smd.String,
+							},
+							{
+								Name: "description",
+								Type: smd.String,
+							},
+							{
+								Name:     "maxScore",
+								Optional: true,
+								Type:     smd.Integer,
+							},
+							{
+								Name:     "order",
+								Optional: true,
+								Type:     smd.Integer,
+							},
+						},
+					},
+				},
+				Returns: smd.JSONSchema{
+					Description: `Material`,
+					Optional:    true,
+					Type:        smd.Object,
+					TypeName:    "Material",
+					Properties: smd.PropertyList{
+						{
+							Name: "id",
+							Type: smd.Integer,
+						},
+						{
+							Name: "title",
+							Type: smd.String,
+						},
+						{
+							Name: "type",
+							Type: smd.String,
+						},
+						{
+							Name: "url",
+							Type: smd.String,
+						},
+						{
+							Name: "description",
+							Type: smd.String,
+						},
+						{
+							Name: "maxScore",
+							Type: smd.Integer,
+						},
+						{
+							Name: "order",
+							Type: smd.Integer,
+						},
+						{
+							Name: "createdAt",
+							Type: smd.String,
+						},
+						{
+							Name: "updatedAt",
+							Type: smd.String,
+						},
+					},
+				},
+				Errors: map[int]string{
+					400: "Validation Error",
+					404: "Not Found",
+					500: "Internal Error",
+				},
+			},
+			"Delete": {
+				Description: `Delete soft-deletes a material (admin only). Existing candidateMaterials
+rows remain intact for historical reporting.`,
+				Parameters: []smd.JSONSchema{
+					{
+						Name:        "id",
+						Description: `int`,
+						Type:        smd.Integer,
+					},
+				},
+				Returns: smd.JSONSchema{
+					Description: `bool`,
+					Type:        smd.Boolean,
+				},
+				Errors: map[int]string{
+					404: "Not Found",
+					500: "Internal Error",
+				},
+			},
+			"SetRead": {
+				Description: `SetRead toggles the candidate-side readAt flag for a material. read=true is
+idempotent: the original readAt is preserved on repeat calls. read=false is
+rejected once the admin has scored the material.`,
+				Parameters: []smd.JSONSchema{
+					{
+						Name: "materialID",
+						Type: smd.Integer,
+					},
+					{
+						Name:        "read",
+						Description: `bool`,
+						Type:        smd.Boolean,
+					},
+				},
+				Returns: smd.JSONSchema{
+					Description: `CandidateMaterial`,
+					Optional:    true,
+					Type:        smd.Object,
+					TypeName:    "CandidateMaterial",
+					Properties: smd.PropertyList{
+						{
+							Name: "id",
+							Type: smd.Integer,
+						},
+						{
+							Name: "candidateId",
+							Type: smd.Integer,
+						},
+						{
+							Name: "materialId",
+							Type: smd.Integer,
+						},
+						{
+							Name:     "readAt",
+							Optional: true,
+							Type:     smd.String,
+						},
+						{
+							Name:     "score",
+							Optional: true,
+							Type:     smd.Integer,
+						},
+						{
+							Name:     "scoredAt",
+							Optional: true,
+							Type:     smd.String,
+						},
+						{
+							Name:     "scoredBy",
+							Optional: true,
+							Type:     smd.Integer,
+						},
+						{
+							Name:     "notes",
+							Optional: true,
+							Type:     smd.String,
+						},
+						{
+							Name: "createdAt",
+							Type: smd.String,
+						},
+					},
+				},
+				Errors: map[int]string{
+					401: "Unauthorized",
+					403: "Forbidden",
+					404: "Not Found",
+					400: "Validation Error",
+					500: "Internal Error",
+				},
+			},
+			"GetProgress": {
+				Description: `GetProgress returns the materials × candidates × progress matrix data.
+Public read — same tier as dashboard.Summary and candidate.Get. The three
+lists are read inside a single transaction so the matrix is consistent
+(no orphan progress rows pointing at a soft-deleted material seen mid-read).`,
+				Parameters: []smd.JSONSchema{},
+				Returns: smd.JSONSchema{
+					Description: `MaterialsProgress`,
+					Optional:    true,
+					Type:        smd.Object,
+					TypeName:    "MaterialsProgress",
+					Properties: smd.PropertyList{
+						{
+							Name: "materials",
+							Type: smd.Array,
+							Items: map[string]string{
+								"$ref": "#/definitions/Material",
+							},
+						},
+						{
+							Name: "candidates",
+							Type: smd.Array,
+							Items: map[string]string{
+								"$ref": "#/definitions/CandidateBrief",
+							},
+						},
+						{
+							Name: "progress",
+							Type: smd.Array,
+							Items: map[string]string{
+								"$ref": "#/definitions/CandidateMaterial",
+							},
+						},
+					},
+					Definitions: map[string]smd.Definition{
+						"Material": {
+							Type: "object",
+							Properties: smd.PropertyList{
+								{
+									Name: "id",
+									Type: smd.Integer,
+								},
+								{
+									Name: "title",
+									Type: smd.String,
+								},
+								{
+									Name: "type",
+									Type: smd.String,
+								},
+								{
+									Name: "url",
+									Type: smd.String,
+								},
+								{
+									Name: "description",
+									Type: smd.String,
+								},
+								{
+									Name: "maxScore",
+									Type: smd.Integer,
+								},
+								{
+									Name: "order",
+									Type: smd.Integer,
+								},
+								{
+									Name: "createdAt",
+									Type: smd.String,
+								},
+								{
+									Name: "updatedAt",
+									Type: smd.String,
+								},
+							},
+						},
+						"CandidateBrief": {
+							Type: "object",
+							Properties: smd.PropertyList{
+								{
+									Name: "id",
+									Type: smd.Integer,
+								},
+								{
+									Name: "name",
+									Type: smd.String,
+								},
+								{
+									Name: "handle",
+									Type: smd.String,
+								},
+								{
+									Name: "avatarColor",
+									Type: smd.String,
+								},
+								{
+									Name: "initials",
+									Type: smd.String,
+								},
+								{
+									Name:     "avatarUrl",
+									Optional: true,
+									Type:     smd.String,
+								},
+								{
+									Name: "currentStageId",
+									Type: smd.Integer,
+								},
+							},
+						},
+						"CandidateMaterial": {
+							Type: "object",
+							Properties: smd.PropertyList{
+								{
+									Name: "id",
+									Type: smd.Integer,
+								},
+								{
+									Name: "candidateId",
+									Type: smd.Integer,
+								},
+								{
+									Name: "materialId",
+									Type: smd.Integer,
+								},
+								{
+									Name:     "readAt",
+									Optional: true,
+									Type:     smd.String,
+								},
+								{
+									Name:     "score",
+									Optional: true,
+									Type:     smd.Integer,
+								},
+								{
+									Name:     "scoredAt",
+									Optional: true,
+									Type:     smd.String,
+								},
+								{
+									Name:     "scoredBy",
+									Optional: true,
+									Type:     smd.Integer,
+								},
+								{
+									Name:     "notes",
+									Optional: true,
+									Type:     smd.String,
+								},
+								{
+									Name: "createdAt",
+									Type: smd.String,
+								},
+							},
+						},
+					},
+				},
+				Errors: map[int]string{
+					500: "Internal Error",
+				},
+			},
+			"GetMyProgress": {
+				Description: `GetMyProgress returns the current candidate's progress on every active
+material. nil Progress = candidate has not marked the material yet.`,
+				Parameters: []smd.JSONSchema{},
+				Returns: smd.JSONSchema{
+					Description: `[]MyMaterialProgress`,
+					Type:        smd.Array,
+					TypeName:    "[]MyMaterialProgress",
+					Items: map[string]string{
+						"$ref": "#/definitions/MyMaterialProgress",
+					},
+					Definitions: map[string]smd.Definition{
+						"MyMaterialProgress": {
+							Type: "object",
+							Properties: smd.PropertyList{
+								{
+									Name: "material",
+									Ref:  "#/definitions/Material",
+									Type: smd.Object,
+								},
+								{
+									Name:     "progress",
+									Optional: true,
+									Ref:      "#/definitions/CandidateMaterial",
+									Type:     smd.Object,
+								},
+							},
+						},
+						"Material": {
+							Type: "object",
+							Properties: smd.PropertyList{
+								{
+									Name: "id",
+									Type: smd.Integer,
+								},
+								{
+									Name: "title",
+									Type: smd.String,
+								},
+								{
+									Name: "type",
+									Type: smd.String,
+								},
+								{
+									Name: "url",
+									Type: smd.String,
+								},
+								{
+									Name: "description",
+									Type: smd.String,
+								},
+								{
+									Name: "maxScore",
+									Type: smd.Integer,
+								},
+								{
+									Name: "order",
+									Type: smd.Integer,
+								},
+								{
+									Name: "createdAt",
+									Type: smd.String,
+								},
+								{
+									Name: "updatedAt",
+									Type: smd.String,
+								},
+							},
+						},
+						"CandidateMaterial": {
+							Type: "object",
+							Properties: smd.PropertyList{
+								{
+									Name: "id",
+									Type: smd.Integer,
+								},
+								{
+									Name: "candidateId",
+									Type: smd.Integer,
+								},
+								{
+									Name: "materialId",
+									Type: smd.Integer,
+								},
+								{
+									Name:     "readAt",
+									Optional: true,
+									Type:     smd.String,
+								},
+								{
+									Name:     "score",
+									Optional: true,
+									Type:     smd.Integer,
+								},
+								{
+									Name:     "scoredAt",
+									Optional: true,
+									Type:     smd.String,
+								},
+								{
+									Name:     "scoredBy",
+									Optional: true,
+									Type:     smd.Integer,
+								},
+								{
+									Name:     "notes",
+									Optional: true,
+									Type:     smd.String,
+								},
+								{
+									Name: "createdAt",
+									Type: smd.String,
+								},
+							},
+						},
+					},
+				},
+				Errors: map[int]string{
+					401: "Unauthorized",
+					500: "Internal Error",
+				},
+			},
+			"Score": {
+				Description: `Score sets score/scoredAt/scoredBy/notes on a candidateMaterial (admin only,
+UPSERT-style). Score must be within [1, materials.maxScore].`,
+				Parameters: []smd.JSONSchema{
+					{
+						Name: "candidateID",
+						Type: smd.Integer,
+					},
+					{
+						Name: "materialID",
+						Type: smd.Integer,
+					},
+					{
+						Name:        "score",
+						Description: `int`,
+						Type:        smd.Integer,
+					},
+					{
+						Name:        "notes",
+						Optional:    true,
+						Description: `*string`,
+						Type:        smd.String,
+					},
+				},
+				Returns: smd.JSONSchema{
+					Description: `CandidateMaterial`,
+					Optional:    true,
+					Type:        smd.Object,
+					TypeName:    "CandidateMaterial",
+					Properties: smd.PropertyList{
+						{
+							Name: "id",
+							Type: smd.Integer,
+						},
+						{
+							Name: "candidateId",
+							Type: smd.Integer,
+						},
+						{
+							Name: "materialId",
+							Type: smd.Integer,
+						},
+						{
+							Name:     "readAt",
+							Optional: true,
+							Type:     smd.String,
+						},
+						{
+							Name:     "score",
+							Optional: true,
+							Type:     smd.Integer,
+						},
+						{
+							Name:     "scoredAt",
+							Optional: true,
+							Type:     smd.String,
+						},
+						{
+							Name:     "scoredBy",
+							Optional: true,
+							Type:     smd.Integer,
+						},
+						{
+							Name:     "notes",
+							Optional: true,
+							Type:     smd.String,
+						},
+						{
+							Name: "createdAt",
+							Type: smd.String,
+						},
+					},
+				},
+				Errors: map[int]string{
+					400: "Validation Error",
+					404: "Not Found",
+					500: "Internal Error",
+				},
+			},
+			"Unscore": {
+				Description: `Unscore clears score/scoredAt/scoredBy/notes on a candidateMaterial. Returns
+false if no scored row existed (idempotent).`,
+				Parameters: []smd.JSONSchema{
+					{
+						Name: "candidateID",
+						Type: smd.Integer,
+					},
+					{
+						Name: "materialID",
+						Type: smd.Integer,
+					},
+				},
+				Returns: smd.JSONSchema{
+					Description: `bool`,
+					Type:        smd.Boolean,
+				},
+				Errors: map[int]string{
+					404: "Not Found",
+					500: "Internal Error",
+				},
+			},
+		},
+	}
+}
+
+// Invoke is as generated code from zenrpc cmd
+func (s MaterialService) Invoke(ctx context.Context, method string, params json.RawMessage) zenrpc.Response {
+	resp := zenrpc.Response{}
+	var err error
+
+	switch method {
+	case RPC.MaterialService.Get:
+		var args = struct {
+			View *ViewOps `json:"view"`
+		}{}
+
+		if zenrpc.IsArray(params) {
+			if params, err = zenrpc.ConvertToObject([]string{"view"}, params); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &args); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		resp.Set(s.Get(ctx, args.View))
+
+	case RPC.MaterialService.GetByID:
+		var args = struct {
+			Id int `json:"id"`
+		}{}
+
+		if zenrpc.IsArray(params) {
+			if params, err = zenrpc.ConvertToObject([]string{"id"}, params); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &args); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		resp.Set(s.GetByID(ctx, args.Id))
+
+	case RPC.MaterialService.Add:
+		var args = struct {
+			Input MaterialInput `json:"input"`
+		}{}
+
+		if zenrpc.IsArray(params) {
+			if params, err = zenrpc.ConvertToObject([]string{"input"}, params); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &args); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		resp.Set(s.Add(ctx, args.Input))
+
+	case RPC.MaterialService.Update:
+		var args = struct {
+			Id    int           `json:"id"`
+			Input MaterialInput `json:"input"`
+		}{}
+
+		if zenrpc.IsArray(params) {
+			if params, err = zenrpc.ConvertToObject([]string{"id", "input"}, params); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &args); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		resp.Set(s.Update(ctx, args.Id, args.Input))
+
+	case RPC.MaterialService.Delete:
+		var args = struct {
+			Id int `json:"id"`
+		}{}
+
+		if zenrpc.IsArray(params) {
+			if params, err = zenrpc.ConvertToObject([]string{"id"}, params); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &args); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		resp.Set(s.Delete(ctx, args.Id))
+
+	case RPC.MaterialService.SetRead:
+		var args = struct {
+			MaterialID int  `json:"materialID"`
+			Read       bool `json:"read"`
+		}{}
+
+		if zenrpc.IsArray(params) {
+			if params, err = zenrpc.ConvertToObject([]string{"materialID", "read"}, params); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &args); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		resp.Set(s.SetRead(ctx, args.MaterialID, args.Read))
+
+	case RPC.MaterialService.GetProgress:
+		resp.Set(s.GetProgress(ctx))
+
+	case RPC.MaterialService.GetMyProgress:
+		resp.Set(s.GetMyProgress(ctx))
+
+	case RPC.MaterialService.Score:
+		var args = struct {
+			CandidateID int     `json:"candidateID"`
+			MaterialID  int     `json:"materialID"`
+			Score       int     `json:"score"`
+			Notes       *string `json:"notes"`
+		}{}
+
+		if zenrpc.IsArray(params) {
+			if params, err = zenrpc.ConvertToObject([]string{"candidateID", "materialID", "score", "notes"}, params); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &args); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		resp.Set(s.Score(ctx, args.CandidateID, args.MaterialID, args.Score, args.Notes))
+
+	case RPC.MaterialService.Unscore:
+		var args = struct {
+			CandidateID int `json:"candidateID"`
+			MaterialID  int `json:"materialID"`
+		}{}
+
+		if zenrpc.IsArray(params) {
+			if params, err = zenrpc.ConvertToObject([]string{"candidateID", "materialID"}, params); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &args); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		resp.Set(s.Unscore(ctx, args.CandidateID, args.MaterialID))
 
 	default:
 		resp = zenrpc.NewResponseError(nil, zenrpc.MethodNotFound, "", nil)

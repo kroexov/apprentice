@@ -15,6 +15,7 @@ const (
 	NSCandidate = "candidate"
 	NSDashboard = "dashboard"
 	NSAuth      = "auth"
+	NSMaterial  = "material"
 )
 
 var (
@@ -72,6 +73,7 @@ func New(dbo db.DB, logger embedlog.Logger, isDevel bool) *zenrpc.Server {
 		NSCandidate: NewCandidateService(dbo, logger),
 		NSDashboard: NewDashboardService(dbo, logger),
 		NSAuth:      NewAuthService(dbo, logger),
+		NSMaterial:  NewMaterialService(dbo, logger),
 	})
 
 	return rpc

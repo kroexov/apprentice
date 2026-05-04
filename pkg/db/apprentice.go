@@ -22,16 +22,21 @@ func NewApprenticeRepo(db orm.DB) ApprenticeRepo {
 		filters: map[string][]Filter{
 			Tables.Candidate.Name: {StatusFilter},
 			Tables.Stage.Name:     {StatusFilter},
+			Tables.Material.Name:  {StatusFilter},
 		},
 		sort: map[string][]SortField{
-			Tables.Candidate.Name:      {{Column: Columns.Candidate.CreatedAt, Direction: SortDesc}},
-			Tables.CandidateStage.Name: {{Column: Columns.CandidateStage.CreatedAt, Direction: SortDesc}},
-			Tables.Stage.Name:          {{Column: Columns.Stage.Title, Direction: SortAsc}},
+			Tables.Candidate.Name:         {{Column: Columns.Candidate.CreatedAt, Direction: SortDesc}},
+			Tables.CandidateStage.Name:    {{Column: Columns.CandidateStage.CreatedAt, Direction: SortDesc}},
+			Tables.Stage.Name:             {{Column: Columns.Stage.Title, Direction: SortAsc}},
+			Tables.CandidateMaterial.Name: {{Column: Columns.CandidateMaterial.CreatedAt, Direction: SortDesc}},
+			Tables.Material.Name:          {{Column: Columns.Material.CreatedAt, Direction: SortDesc}},
 		},
 		join: map[string][]string{
-			Tables.Candidate.Name:      {TableColumns, Columns.Candidate.CurrentStage},
-			Tables.CandidateStage.Name: {TableColumns, Columns.CandidateStage.Candidate, Columns.CandidateStage.Stage},
-			Tables.Stage.Name:          {TableColumns},
+			Tables.Candidate.Name:         {TableColumns, Columns.Candidate.CurrentStage},
+			Tables.CandidateStage.Name:    {TableColumns, Columns.CandidateStage.Candidate, Columns.CandidateStage.Stage},
+			Tables.Stage.Name:             {TableColumns},
+			Tables.CandidateMaterial.Name: {TableColumns, Columns.CandidateMaterial.Candidate, Columns.CandidateMaterial.Material},
+			Tables.Material.Name:          {TableColumns},
 		},
 	}
 }
@@ -283,4 +288,161 @@ func (ar ApprenticeRepo) DeleteStage(ctx context.Context, id int) (deleted bool,
 	stage := &Stage{ID: id, StatusID: StatusDeleted}
 
 	return ar.UpdateStage(ctx, stage, WithColumns(Columns.Stage.StatusID))
+}
+
+/*** CandidateMaterial ***/
+
+// FullCandidateMaterial returns full joins with all columns
+func (ar ApprenticeRepo) FullCandidateMaterial() OpFunc {
+	return WithColumns(ar.join[Tables.CandidateMaterial.Name]...)
+}
+
+// DefaultCandidateMaterialSort returns default sort.
+func (ar ApprenticeRepo) DefaultCandidateMaterialSort() OpFunc {
+	return WithSort(ar.sort[Tables.CandidateMaterial.Name]...)
+}
+
+// CandidateMaterialByID is a function that returns CandidateMaterial by ID(s) or nil.
+func (ar ApprenticeRepo) CandidateMaterialByID(ctx context.Context, id int, ops ...OpFunc) (*CandidateMaterial, error) {
+	return ar.OneCandidateMaterial(ctx, &CandidateMaterialSearch{ID: &id}, ops...)
+}
+
+// OneCandidateMaterial is a function that returns one CandidateMaterial by filters. It could return pg.ErrMultiRows.
+func (ar ApprenticeRepo) OneCandidateMaterial(ctx context.Context, search *CandidateMaterialSearch, ops ...OpFunc) (*CandidateMaterial, error) {
+	obj := &CandidateMaterial{}
+	err := buildQuery(ctx, ar.db, obj, search, ar.filters[Tables.CandidateMaterial.Name], PagerTwo, ops...).Select()
+
+	if errors.Is(err, pg.ErrMultiRows) {
+		return nil, err
+	} else if errors.Is(err, pg.ErrNoRows) {
+		return nil, nil
+	}
+
+	return obj, err
+}
+
+// CandidateMaterialsByFilters returns CandidateMaterial list.
+func (ar ApprenticeRepo) CandidateMaterialsByFilters(ctx context.Context, search *CandidateMaterialSearch, pager Pager, ops ...OpFunc) (candidateMaterials []CandidateMaterial, err error) {
+	err = buildQuery(ctx, ar.db, &candidateMaterials, search, ar.filters[Tables.CandidateMaterial.Name], pager, ops...).Select()
+	return
+}
+
+// CountCandidateMaterials returns count
+func (ar ApprenticeRepo) CountCandidateMaterials(ctx context.Context, search *CandidateMaterialSearch, ops ...OpFunc) (int, error) {
+	return buildQuery(ctx, ar.db, &CandidateMaterial{}, search, ar.filters[Tables.CandidateMaterial.Name], PagerOne, ops...).Count()
+}
+
+// AddCandidateMaterial adds CandidateMaterial to DB.
+func (ar ApprenticeRepo) AddCandidateMaterial(ctx context.Context, candidateMaterial *CandidateMaterial, ops ...OpFunc) (*CandidateMaterial, error) {
+	q := ar.db.ModelContext(ctx, candidateMaterial)
+	if len(ops) == 0 {
+		q = q.ExcludeColumn(Columns.CandidateMaterial.CreatedAt)
+	}
+	applyOps(q, ops...)
+	_, err := q.Insert()
+
+	return candidateMaterial, err
+}
+
+// UpdateCandidateMaterial updates CandidateMaterial in DB.
+func (ar ApprenticeRepo) UpdateCandidateMaterial(ctx context.Context, candidateMaterial *CandidateMaterial, ops ...OpFunc) (bool, error) {
+	q := ar.db.ModelContext(ctx, candidateMaterial).WherePK()
+	if len(ops) == 0 {
+		q = q.ExcludeColumn(Columns.CandidateMaterial.ID, Columns.CandidateMaterial.CreatedAt)
+	}
+	applyOps(q, ops...)
+	res, err := q.Update()
+	if err != nil {
+		return false, err
+	}
+
+	return res.RowsAffected() > 0, err
+}
+
+// DeleteCandidateMaterial deletes CandidateMaterial from DB.
+func (ar ApprenticeRepo) DeleteCandidateMaterial(ctx context.Context, id int) (deleted bool, err error) {
+	candidateMaterial := &CandidateMaterial{ID: id}
+
+	res, err := ar.db.ModelContext(ctx, candidateMaterial).WherePK().Delete()
+	if err != nil {
+		return false, err
+	}
+
+	return res.RowsAffected() > 0, err
+}
+
+/*** Material ***/
+
+// FullMaterial returns full joins with all columns
+func (ar ApprenticeRepo) FullMaterial() OpFunc {
+	return WithColumns(ar.join[Tables.Material.Name]...)
+}
+
+// DefaultMaterialSort returns default sort.
+func (ar ApprenticeRepo) DefaultMaterialSort() OpFunc {
+	return WithSort(ar.sort[Tables.Material.Name]...)
+}
+
+// MaterialByID is a function that returns Material by ID(s) or nil.
+func (ar ApprenticeRepo) MaterialByID(ctx context.Context, id int, ops ...OpFunc) (*Material, error) {
+	return ar.OneMaterial(ctx, &MaterialSearch{ID: &id}, ops...)
+}
+
+// OneMaterial is a function that returns one Material by filters. It could return pg.ErrMultiRows.
+func (ar ApprenticeRepo) OneMaterial(ctx context.Context, search *MaterialSearch, ops ...OpFunc) (*Material, error) {
+	obj := &Material{}
+	err := buildQuery(ctx, ar.db, obj, search, ar.filters[Tables.Material.Name], PagerTwo, ops...).Select()
+
+	if errors.Is(err, pg.ErrMultiRows) {
+		return nil, err
+	} else if errors.Is(err, pg.ErrNoRows) {
+		return nil, nil
+	}
+
+	return obj, err
+}
+
+// MaterialsByFilters returns Material list.
+func (ar ApprenticeRepo) MaterialsByFilters(ctx context.Context, search *MaterialSearch, pager Pager, ops ...OpFunc) (materials []Material, err error) {
+	err = buildQuery(ctx, ar.db, &materials, search, ar.filters[Tables.Material.Name], pager, ops...).Select()
+	return
+}
+
+// CountMaterials returns count
+func (ar ApprenticeRepo) CountMaterials(ctx context.Context, search *MaterialSearch, ops ...OpFunc) (int, error) {
+	return buildQuery(ctx, ar.db, &Material{}, search, ar.filters[Tables.Material.Name], PagerOne, ops...).Count()
+}
+
+// AddMaterial adds Material to DB.
+func (ar ApprenticeRepo) AddMaterial(ctx context.Context, material *Material, ops ...OpFunc) (*Material, error) {
+	q := ar.db.ModelContext(ctx, material)
+	if len(ops) == 0 {
+		q = q.ExcludeColumn(Columns.Material.CreatedAt)
+	}
+	applyOps(q, ops...)
+	_, err := q.Insert()
+
+	return material, err
+}
+
+// UpdateMaterial updates Material in DB.
+func (ar ApprenticeRepo) UpdateMaterial(ctx context.Context, material *Material, ops ...OpFunc) (bool, error) {
+	q := ar.db.ModelContext(ctx, material).WherePK()
+	if len(ops) == 0 {
+		q = q.ExcludeColumn(Columns.Material.ID, Columns.Material.CreatedAt)
+	}
+	applyOps(q, ops...)
+	res, err := q.Update()
+	if err != nil {
+		return false, err
+	}
+
+	return res.RowsAffected() > 0, err
+}
+
+// DeleteMaterial set statusId to deleted in DB.
+func (ar ApprenticeRepo) DeleteMaterial(ctx context.Context, id int) (deleted bool, err error) {
+	material := &Material{ID: id, StatusID: StatusDeleted}
+
+	return ar.UpdateMaterial(ctx, material, WithColumns(Columns.Material.StatusID))
 }

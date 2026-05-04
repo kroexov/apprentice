@@ -115,3 +115,17 @@ func (s Stage) Validate() (errors map[string]string, valid bool) {
 
 	return errors, len(errors) == 0
 }
+
+func (m Material) Validate() (errors map[string]string, valid bool) {
+	errors = map[string]string{}
+
+	if utf8.RuneCountInString(m.Title) > 255 {
+		errors[Columns.Material.Title] = ErrMaxLength
+	}
+
+	if utf8.RuneCountInString(m.Type) > 32 {
+		errors[Columns.Material.Type] = ErrMaxLength
+	}
+
+	return errors, len(errors) == 0
+}

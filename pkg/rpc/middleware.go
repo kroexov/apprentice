@@ -124,6 +124,10 @@ func isOpenMethod(ns, method string) bool {
 		return method == RPC.StageService.Get || method == RPC.StageService.GetByID
 	case NSDashboard:
 		return method == RPC.DashboardService.Summary
+	case NSMaterial:
+		return method == RPC.MaterialService.Get ||
+			method == RPC.MaterialService.GetByID ||
+			method == RPC.MaterialService.GetProgress
 	}
 	return false
 }
@@ -139,6 +143,9 @@ func isRegisteredMethod(ns, method string) bool {
 			method == RPC.CandidateService.SetReady
 	case NSAuth:
 		return method == RPC.AuthService.Me
+	case NSMaterial:
+		return method == RPC.MaterialService.SetRead ||
+			method == RPC.MaterialService.GetMyProgress
 	}
 	return false
 }

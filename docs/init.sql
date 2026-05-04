@@ -99,3 +99,71 @@ SET "link" = 'https://example.com/dmitry-stage2.md',
 	"retries" = 1
 WHERE "candidateId" = 5 AND "stageId" = 2;
 
+-- =============================================================================
+-- Materials seed: каталог теоретических материалов (Go базовый, расширенный, PostgreSQL)
+-- =============================================================================
+
+INSERT INTO "materials" ("materialId", "title", "type", "url", "description", "maxScore", "order") VALUES
+	-- Базовый Go
+	( 1, 'Effective Go',                       'article',
+		'https://go.dev/doc/effective_go',
+		'Каноническое руководство по идиоматичному стилю Go от авторов языка.', 10,  1),
+	( 2, 'Go Code Review Comments',            'article',
+		'https://go.dev/wiki/CodeReviewComments',
+		'Чек-лист типовых замечаний на ревью Go-кода — стандарт в комьюнити.', 10,  2),
+	( 3, 'What''s in a name? (Andrew Gerrand)', 'other',
+		'https://go.dev/talks/2014/names.slide',
+		'Слайды Эндрю Геррана о правилах именования в Go.', 10,  3),
+	( 4, 'Organizing Go code',                 'other',
+		'https://go.dev/talks/2014/organizeio.slide',
+		'Слайды о структурировании пакетов и зависимостей в Go-проектах.', 10,  4),
+	( 5, 'Go Proverbs',                        'other',
+		'https://go-proverbs.github.io/',
+		'Сборник поговорок Роба Пайка о философии Go: simplicity, concurrency, interfaces.', 10,  5),
+
+	-- Расширенный Go
+	( 6, 'Practical Go (Dave Cheney, GopherCon Singapore 2019)', 'other',
+		'https://dave.cheney.net/practical-go/presentations/gophercon-singapore-2019.html',
+		'Практические рекомендации Dave Cheney: ясность кода, обработка ошибок, структуры пакетов.', 10,  6),
+	( 7, '50 Shades of Go: Traps, Gotchas, and Common Mistakes', 'book',
+		'https://github.com/diptomondal007/GoLangBooks/blob/master/50%20Shades%20of%20Go%20Traps%20GotchasandCommonMistakesforNewGolangDevs.pdf',
+		'PDF-сборник типовых ловушек, на которые наступают начинающие Go-разработчики.', 10,  7),
+	( 8, 'Google Go Style Guide',              'article',
+		'https://google.github.io/styleguide/go/',
+		'Стайлгайд Google по Go: оглавление по разделам стилистики и ревью.', 10,  8),
+	( 9, 'Google Go Best Practices',           'article',
+		'https://google.github.io/styleguide/go/best-practices',
+		'Расширенные рекомендации Google поверх Effective Go: API, тесты, обработка ошибок.', 10,  9),
+	(10, 'The Twelve-Factor App',              'article',
+		'https://12factor.net/',
+		'Двенадцать факторов современного приложения — база проектирования сервисов.', 10, 10),
+	(11, '100 Go Mistakes and How to Avoid Them', 'article',
+		'https://100go.co/',
+		'Каталог 100 типичных ошибок в Go с разбором — компаньон одноимённой книги.', 10, 11),
+	(12, 'The Go Blog',                        'article',
+		'https://go.dev/blog/',
+		'Официальный блог Go: анонсы релизов, deep-dive и архитектурные пояснения.', 10, 12),
+	(13, 'Go FAQ',                             'article',
+		'https://go.dev/doc/faq',
+		'FAQ команды Go: почему язык устроен именно так и какие компромиссы выбраны.', 10, 13),
+	(14, 'The Go Programming Language Specification', 'article',
+		'https://go.dev/ref/spec',
+		'Полная спецификация языка Go: грамматика, типы, runtime — источник истины.', 10, 14),
+	(15, 'The Go Memory Model',                'article',
+		'https://go.dev/ref/mem',
+		'Memory model Go: правила синхронизации, гонок и happens-before между горутинами.', 10, 15),
+
+	-- PostgreSQL
+	(16, 'PostgreSQL Tutorial',                'article',
+		'https://www.postgresqltutorial.com/',
+		'Введение в SQL и функции PostgreSQL с примерами — разделы от basics до advanced.', 10, 16),
+	(17, 'Технологии баз данных (Postgres Professional)', 'book',
+		'https://edu.postgrespro.ru/dbtech.pdf',
+		'PDF-учебник «Технологии баз данных» от Postgres Professional — академический курс по СУБД.', 10, 17),
+	(18, 'Книги Postgres Professional',        'article',
+		'https://postgrespro.ru/education/books',
+		'Каталог бесплатных книг от Postgres Professional: внутреннее устройство и администрирование.', 10, 18)
+ON CONFLICT ("materialId") DO NOTHING;
+
+SELECT setval('"materials_materialId_seq"', GREATEST((SELECT MAX("materialId") FROM "materials"), 1));
+

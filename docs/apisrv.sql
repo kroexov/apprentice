@@ -248,4 +248,70 @@ ALTER TABLE "candidateStages" ADD CONSTRAINT "candidateStages_scoredBy_fkey" FOR
 	REFERENCES "users"("userId")
 	MATCH SIMPLE ON DELETE SET NULL ON UPDATE RESTRICT NOT DEFERRABLE;
 
+-- =============================================================================
+-- Theory materials: catalogue + per-candidate progress
+-- =============================================================================
+
+CREATE TABLE "materials" (
+	"materialId" SERIAL NOT NULL,
+	"title" varchar(255) NOT NULL,
+	"type" varchar(32) NOT NULL,
+	"url" text NOT NULL,
+	"description" text NOT NULL DEFAULT '',
+	"maxScore" int4 NOT NULL DEFAULT 10,
+	"order" int4 NOT NULL DEFAULT 0,
+	"statusId" int4 NOT NULL DEFAULT 1,
+	"createdAt" timestamp with time zone NOT NULL DEFAULT now(),
+	"updatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+	CONSTRAINT "materials_pkey" PRIMARY KEY ("materialId"),
+	CONSTRAINT "materials_type_check" CHECK ("type" IN ('book','article','video','test','other')),
+	CONSTRAINT "materials_url_check" CHECK (char_length("url") <= 2048),
+	CONSTRAINT "materials_maxScore_check" CHECK ("maxScore" > 0 AND "maxScore" <= 100)
+);
+
+-- Partial unique on title and order so soft-deleted rows release values for
+-- re-use, mirroring the stages.alias / stages.order pattern.
+CREATE UNIQUE INDEX "materials_title_key" ON "materials" ("title") WHERE "statusId" <> 3;
+CREATE UNIQUE INDEX "materials_order_key" ON "materials" ("order") WHERE "statusId" <> 3;
+CREATE INDEX "IX_materials_order" ON "materials" USING BTREE ("order" ASC);
+CREATE INDEX "IX_materials_statusId" ON "materials" USING BTREE ("statusId");
+
+CREATE TABLE "candidateMaterials" (
+	"candidateMaterialId" SERIAL NOT NULL,
+	"candidateId" int4 NOT NULL,
+	"materialId" int4 NOT NULL,
+	"readAt" timestamp with time zone,
+	"score" int2,
+	"scoredAt" timestamp with time zone,
+	"scoredBy" int4,
+	"notes" text,
+	"createdAt" timestamp with time zone NOT NULL DEFAULT now(),
+	CONSTRAINT "candidateMaterials_pkey" PRIMARY KEY ("candidateMaterialId"),
+	CONSTRAINT "candidateMaterials_candidate_material_key" UNIQUE ("candidateId", "materialId"),
+	CONSTRAINT "candidateMaterials_score_check" CHECK ("score" IS NULL OR ("score" >= 1 AND "score" <= 100)),
+	CONSTRAINT "candidateMaterials_scored_consistency_check" CHECK (
+		("score" IS NULL AND "scoredAt" IS NULL AND "scoredBy" IS NULL)
+		OR ("score" IS NOT NULL AND "scoredAt" IS NOT NULL AND "scoredBy" IS NOT NULL)
+	)
+);
+
+CREATE INDEX "IX_candidateMaterials_candidateId" ON "candidateMaterials" USING BTREE ("candidateId");
+CREATE INDEX "IX_candidateMaterials_materialId" ON "candidateMaterials" USING BTREE ("materialId");
+
+ALTER TABLE "materials" ADD CONSTRAINT "materials_statusId_fkey" FOREIGN KEY ("statusId")
+	REFERENCES "statuses"("statusId")
+	MATCH SIMPLE ON DELETE RESTRICT ON UPDATE RESTRICT NOT DEFERRABLE;
+
+ALTER TABLE "candidateMaterials" ADD CONSTRAINT "candidateMaterials_candidateId_fkey" FOREIGN KEY ("candidateId")
+	REFERENCES "candidates"("candidateId")
+	MATCH SIMPLE ON DELETE CASCADE ON UPDATE RESTRICT NOT DEFERRABLE;
+
+ALTER TABLE "candidateMaterials" ADD CONSTRAINT "candidateMaterials_materialId_fkey" FOREIGN KEY ("materialId")
+	REFERENCES "materials"("materialId")
+	MATCH SIMPLE ON DELETE RESTRICT ON UPDATE RESTRICT NOT DEFERRABLE;
+
+ALTER TABLE "candidateMaterials" ADD CONSTRAINT "candidateMaterials_scoredBy_fkey" FOREIGN KEY ("scoredBy")
+	REFERENCES "users"("userId")
+	MATCH SIMPLE ON DELETE SET NULL ON UPDATE RESTRICT NOT DEFERRABLE;
+
 

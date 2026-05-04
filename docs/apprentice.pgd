@@ -190,6 +190,82 @@
       <check name="candidateStages_scored_consistency_check"><![CDATA[(score IS NULL AND "scoredAt" IS NULL) OR (score IS NOT NULL AND "scoredAt" IS NOT NULL)]]></check>
     </table>
 
+    <!-- ============================================================ -->
+    <!-- Теоретический материал (книги, статьи, видео, тесты)          -->
+    <!-- ============================================================ -->
+    <table name="materials" comment="Каталог теоретических материалов для кандидатов">
+      <column name="materialId" type="serial" nullable="false"></column>
+      <column name="title" type="varchar" length="255" nullable="false"
+              comment="название материала"></column>
+      <column name="type" type="varchar" length="32" nullable="false"
+              comment="book | article | video | test | other"></column>
+      <column name="url" type="text" nullable="false"
+              comment="внешняя ссылка на материал"></column>
+      <column name="description" type="text" nullable="false" default="''"
+              comment="комментарий автора курса"></column>
+      <column name="maxScore" type="integer" nullable="false" default="10"
+              comment="максимум баллов за материал"></column>
+      <column name="order" type="integer" nullable="false" default="0"
+              comment="порядок в списке"></column>
+      <column name="statusId" type="integer" nullable="false" default="1"
+              comment="enabled=1, disabled=2, deleted=3"></column>
+      <column name="createdAt" type="timestamptz" nullable="false" default="now()"></column>
+      <column name="updatedAt" type="timestamptz" nullable="false" default="now()"></column>
+      <pk name="materials_pkey">
+        <column name="materialId"></column>
+      </pk>
+      <fk name="materials_statusId_fkey" to-table="statuses" on-delete="restrict">
+        <column name="statusId" references="statusId"></column>
+      </fk>
+      <check name="materials_type_check"><![CDATA["type" IN ('book','article','video','test','other')]]></check>
+      <check name="materials_url_check"><![CDATA[char_length(url) <= 2048]]></check>
+      <check name="materials_maxScore_check"><![CDATA["maxScore" > 0 AND "maxScore" <= 100]]></check>
+      <!-- Partial unique так же, как у stages: освобождаются после soft-delete -->
+      <index name="materials_title_key" using="btree" unique="true" where="&quot;statusId&quot; &lt;&gt; 3">
+        <column name="title"></column>
+      </index>
+      <index name="materials_order_key" using="btree" unique="true" where="&quot;statusId&quot; &lt;&gt; 3">
+        <column name="order"></column>
+      </index>
+    </table>
+
+    <!-- ============================================================ -->
+    <!-- Прогресс кандидата по материалу                               -->
+    <!-- ============================================================ -->
+    <table name="candidateMaterials" comment="Двухстадийная отметка: кандидат → readAt, админ → score">
+      <column name="candidateMaterialId" type="serial" nullable="false"></column>
+      <column name="candidateId" type="integer" nullable="false"></column>
+      <column name="materialId" type="integer" nullable="false"></column>
+      <column name="readAt" type="timestamptz" nullable="true"
+              comment="когда кандидат отметил прочитанным; пока null — не читал"></column>
+      <column name="score" type="smallint" nullable="true"
+              comment="балл 1..materials.maxScore; null пока не оценено"></column>
+      <column name="scoredAt" type="timestamptz" nullable="true"></column>
+      <column name="scoredBy" type="integer" nullable="true"
+              comment="users.userId — кто поставил оценку"></column>
+      <column name="notes" type="text" nullable="true"
+              comment="заметка админа после личного обсуждения"></column>
+      <column name="createdAt" type="timestamptz" nullable="false" default="now()"></column>
+      <pk name="candidateMaterials_pkey">
+        <column name="candidateMaterialId"></column>
+      </pk>
+      <unique name="candidateMaterials_candidate_material_key">
+        <column name="candidateId"></column>
+        <column name="materialId"></column>
+      </unique>
+      <fk name="candidateMaterials_candidateId_fkey" to-table="candidates" on-delete="cascade">
+        <column name="candidateId" references="candidateId"></column>
+      </fk>
+      <fk name="candidateMaterials_materialId_fkey" to-table="materials" on-delete="restrict">
+        <column name="materialId" references="materialId"></column>
+      </fk>
+      <fk name="candidateMaterials_scoredBy_fkey" to-table="users" on-delete="set null">
+        <column name="scoredBy" references="userId"></column>
+      </fk>
+      <check name="candidateMaterials_score_check"><![CDATA[score IS NULL OR (score >= 1 AND score <= 100)]]></check>
+      <check name="candidateMaterials_scored_consistency_check"><![CDATA[(score IS NULL AND "scoredAt" IS NULL AND "scoredBy" IS NULL) OR (score IS NOT NULL AND "scoredAt" IS NOT NULL AND "scoredBy" IS NOT NULL)]]></check>
+    </table>
+
     <!-- Индексы (на уровне схемы, не внутри таблиц) -->
     <index name="IX_stages_order" table="stages" using="btree">
       <column name="order" order="asc"></column>
@@ -209,6 +285,18 @@
     </index>
     <index name="IX_candidateStages_stageId" table="candidateStages" using="btree">
       <column name="stageId"></column>
+    </index>
+    <index name="IX_materials_order" table="materials" using="btree">
+      <column name="order" order="asc"></column>
+    </index>
+    <index name="IX_materials_statusId" table="materials" using="btree">
+      <column name="statusId"></column>
+    </index>
+    <index name="IX_candidateMaterials_candidateId" table="candidateMaterials" using="btree">
+      <column name="candidateId"></column>
+    </index>
+    <index name="IX_candidateMaterials_materialId" table="candidateMaterials" using="btree">
+      <column name="materialId"></column>
     </index>
 
   </schema>
