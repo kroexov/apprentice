@@ -315,6 +315,90 @@ func (s CandidateService) Update(ctx context.Context, candidate Candidate) (bool
 	return ok, nil
 }
 
+// UpdateProfile updates the editable subset of the *caller's own* profile.
+// Self-only: candidate-authKey required; admin requests are rejected (admin
+// edits go through candidate.update). Login is editable — the existing
+// authKey survives a login change (token is independent of login).
+// Password / authKey / currentStageId / completedAt are not touched here.
+//
+//zenrpc:profile CandidateProfile
+//zenrpc:return Candidate
+//zenrpc:401 Unauthorized
+//zenrpc:403 Forbidden
+//zenrpc:404 Not Found
+//zenrpc:400 Validation Error
+//zenrpc:500 Internal Error
+func (s CandidateService) UpdateProfile(ctx context.Context, profile CandidateProfile) (*Candidate, error) {
+	cand := CandidateFromContext(ctx)
+	if cand == nil {
+		// Anonymous → 401 caught by middleware; an admin authKey on this
+		// registered-tier method lands here, and the right answer is 403:
+		// the method is self-only by contract, admins use candidate.update.
+		return nil, ErrForbidden
+	}
+
+	if ve := validateProfileFields(profile); ve.HasErrors() {
+		return nil, ve.Error()
+	}
+	avatarURL, err := normalizeLink(profile.AvatarURL)
+	if err != nil {
+		return nil, err
+	}
+
+	var updated *db.Candidate
+	err = s.dbo.RunInTransaction(ctx, func(tx *pg.Tx) error {
+		txRepo := s.repo.WithTransaction(tx)
+
+		cur, txErr := txRepo.CandidateByID(ctx, cand.ID)
+		if txErr != nil {
+			return txErr
+		}
+		if cur == nil {
+			return ErrCandidateNotFound
+		}
+
+		if txErr = checkProfileUniqueness(ctx, txRepo, cur, profile); txErr != nil {
+			return txErr
+		}
+
+		applyProfilePatch(cur, profile, avatarURL)
+
+		if _, txErr = txRepo.UpdateCandidate(ctx, cur, db.WithColumns(
+			db.Columns.Candidate.Login,
+			db.Columns.Candidate.Name,
+			db.Columns.Candidate.Handle,
+			db.Columns.Candidate.City,
+			db.Columns.Candidate.Age,
+			db.Columns.Candidate.Bio,
+			db.Columns.Candidate.AvatarColor,
+			db.Columns.Candidate.Initials,
+			db.Columns.Candidate.AvatarUrl,
+			db.Columns.Candidate.Strengths,
+			db.Columns.Candidate.Weaknesses,
+			db.Columns.Candidate.UpdatedAt,
+		)); txErr != nil {
+			if db.IsUniqueViolation(txErr) {
+				// Pre-checks already rejected the common case; a violation
+				// here is a race. Both login and handle have partial-unique
+				// indexes — fall back to handle-taken signal.
+				return ErrHandleTaken
+			}
+			return txErr
+		}
+		updated = cur
+		return nil
+	})
+	if err != nil {
+		var zerr *zenrpc.Error
+		if errors.As(err, &zerr) {
+			return nil, zerr
+		}
+		return nil, InternalError(err)
+	}
+	s.Print(ctx, "candidate profile updated", "candidateId", updated.ID)
+	return NewCandidate(updated), nil
+}
+
 // Delete soft-deletes a candidate.
 //
 //zenrpc:id int
@@ -787,6 +871,111 @@ func (s CandidateService) loadAggregateInputs(ctx context.Context) ([]db.Stage, 
 		return nil, nil, nil, InternalError(err)
 	}
 	return stages, candidates, cstages, nil
+}
+
+// checkProfileUniqueness rejects login/handle clashes against other rows
+// (self excluded). Pulled out of UpdateProfile to keep cyclomatic complexity
+// below the linter cap; the partial-unique DB index is the final guard.
+func checkProfileUniqueness(ctx context.Context, repo db.ApprenticeRepo, cur *db.Candidate, profile CandidateProfile) error {
+	if profile.Login != cur.Login {
+		other, err := repo.OneCandidate(ctx, &db.CandidateSearch{Login: &profile.Login})
+		if err != nil {
+			return err
+		}
+		if other != nil && other.ID != cur.ID {
+			return ErrLoginTaken
+		}
+	}
+	if profile.Handle != cur.Handle {
+		other, err := repo.OneCandidate(ctx, &db.CandidateSearch{Handle: &profile.Handle})
+		if err != nil {
+			return err
+		}
+		if other != nil && other.ID != cur.ID {
+			return ErrHandleTaken
+		}
+	}
+	return nil
+}
+
+// applyProfilePatch copies the editable profile fields from a CandidateProfile
+// onto an existing db.Candidate row, normalising slices and stamping UpdatedAt.
+func applyProfilePatch(cur *db.Candidate, profile CandidateProfile, avatarURL *string) {
+	cur.Login = profile.Login
+	cur.Name = profile.Name
+	cur.Handle = profile.Handle
+	cur.City = profile.City
+	cur.Age = profile.Age
+	cur.Bio = profile.Bio
+	cur.AvatarColor = profile.AvatarColor
+	cur.Initials = profile.Initials
+	cur.AvatarUrl = avatarURL
+	cur.Strengths = nilToEmpty(profile.Strengths)
+	cur.Weaknesses = nilToEmpty(profile.Weaknesses)
+	cur.UpdatedAt = time.Now()
+}
+
+// validateProfileFields validates the editable profile fields shared by
+// auth.signUp and candidate.updateProfile. Format/length only — uniqueness
+// is callsite-specific (different self-exclusion) and lives in callers.
+// avatarUrl is checked separately via normalizeLink to surface its dedicated
+// ErrLinkInvalid instead of a FieldError.
+func validateProfileFields(p CandidateProfile) Validator {
+	var v Validator
+
+	switch {
+	case p.Login == "":
+		v.Append("login", FieldErrorRequired)
+	case utf8.RuneCountInString(p.Login) > 64:
+		v.AppendMax("login", 64)
+	case !authLoginRegex.MatchString(p.Login):
+		v.Append("login", FieldErrorFormat)
+	}
+	switch {
+	case p.Name == "":
+		v.Append("name", FieldErrorRequired)
+	case utf8.RuneCountInString(p.Name) > 80:
+		v.AppendMax("name", 80)
+	}
+	switch {
+	case p.Handle == "":
+		v.Append("handle", FieldErrorRequired)
+	case utf8.RuneCountInString(p.Handle) > 40:
+		v.AppendMax("handle", 40)
+	case !candidateHandleRegex.MatchString(p.Handle):
+		v.Append("handle", FieldErrorFormat)
+	}
+	if utf8.RuneCountInString(p.City) > 128 {
+		v.AppendMax("city", 128)
+	}
+	if p.Age != nil && (*p.Age < 14 || *p.Age > 120) {
+		v.Append("age", FieldErrorFormat)
+	}
+	if utf8.RuneCountInString(p.AvatarColor) > 16 {
+		v.AppendMax("avatarColor", 16)
+	}
+	if n := utf8.RuneCountInString(p.Initials); n < 1 || n > 3 {
+		v.Append("initials", FieldErrorLen)
+	}
+	if len(p.Strengths) > 10 {
+		v.AppendMax("strengths", 10)
+	}
+	for _, t := range p.Strengths {
+		if utf8.RuneCountInString(t) > 40 {
+			v.AppendMax("strengths", 40)
+			break
+		}
+	}
+	if len(p.Weaknesses) > 10 {
+		v.AppendMax("weaknesses", 10)
+	}
+	for _, t := range p.Weaknesses {
+		if utf8.RuneCountInString(t) > 40 {
+			v.AppendMax("weaknesses", 40)
+			break
+		}
+	}
+	return v
 }
 
 func (s CandidateService) isValid(ctx context.Context, c Candidate, isUpdate bool) Validator {

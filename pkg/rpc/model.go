@@ -309,6 +309,50 @@ type CandidateWithPassword struct {
 	Password string `json:"password"`
 }
 
+// SignUpParams is the public-signup payload: credentials plus the basic
+// profile fields a candidate fills on the registration form. Fields gated by
+// program flow (currentStageId, completedAt) are intentionally absent —
+// the first stage is assigned automatically, completion is set by Advance.
+//
+// Optional fields use pointers so the caller can omit them: Handle defaults
+// to Login, Initials defaults to defaultInitials(Login), AvatarUrl is nullable,
+// Strengths/Weaknesses default to empty slices.
+type SignUpParams struct {
+	Login       string   `json:"login"`
+	Password    string   `json:"password"`
+	Name        string   `json:"name"`
+	Handle      *string  `json:"handle"`
+	City        string   `json:"city"`
+	Age         *int     `json:"age"`
+	Bio         string   `json:"bio"`
+	AvatarColor string   `json:"avatarColor"`
+	Initials    *string  `json:"initials"`
+	AvatarURL   *string  `json:"avatarUrl"`
+	Strengths   []string `json:"strengths"`
+	Weaknesses  []string `json:"weaknesses"`
+}
+
+// CandidateProfile is the editable subset of Candidate exposed via
+// candidate.updateProfile. Excluded by design: password (separate flow),
+// authKey (managed by auth.*), currentStageId / completedAt (program flow),
+// createdAt / updatedAt (server-managed), statusId (admin lifecycle).
+//
+// Login is editable here. Changing it does not invalidate existing authKey —
+// the token is independent of login.
+type CandidateProfile struct {
+	Login       string   `json:"login"`
+	Name        string   `json:"name"`
+	Handle      string   `json:"handle"`
+	City        string   `json:"city"`
+	Age         *int     `json:"age"`
+	Bio         string   `json:"bio"`
+	AvatarColor string   `json:"avatarColor"`
+	Initials    string   `json:"initials"`
+	AvatarURL   *string  `json:"avatarUrl"`
+	Strengths   []string `json:"strengths"`
+	Weaknesses  []string `json:"weaknesses"`
+}
+
 // ============================================================================
 // Auth
 // ============================================================================

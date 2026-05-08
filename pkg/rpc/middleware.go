@@ -117,7 +117,9 @@ func responseError(ctx context.Context, status int) zenrpc.Response {
 func isOpenMethod(ns, method string) bool {
 	switch ns {
 	case NSAuth:
-		return method == RPC.AuthService.Login || method == RPC.AuthService.Register
+		return method == RPC.AuthService.Login ||
+			method == RPC.AuthService.Register ||
+			method == RPC.AuthService.SignUp
 	case NSCandidate:
 		return method == RPC.CandidateService.Get || method == RPC.CandidateService.GetByID
 	case NSStage:
@@ -140,7 +142,8 @@ func isRegisteredMethod(ns, method string) bool {
 	case NSCandidate:
 		return method == RPC.CandidateService.SetLink ||
 			method == RPC.CandidateService.SetAvatarURL ||
-			method == RPC.CandidateService.SetReady
+			method == RPC.CandidateService.SetReady ||
+			method == RPC.CandidateService.UpdateProfile
 	case NSAuth:
 		return method == RPC.AuthService.Me
 	case NSMaterial:

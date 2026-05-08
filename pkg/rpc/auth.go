@@ -126,6 +126,55 @@ func (s AuthService) Register(ctx context.Context, login, password, userType str
 	return s.registerUser(ctx, login, password)
 }
 
+// SignUp creates a candidate with the basic profile a candidate fills on the
+// registration form, and returns a fresh authKey. Credential policy matches
+// Register (login regex, password 8..72). Handle defaults to Login when not
+// provided, Initials defaults to defaultInitials(Login). The first available
+// stage is assigned automatically; currentStageId / completedAt are not
+// caller-controlled.
+//
+//zenrpc:params SignUpParams
+//zenrpc:return User authentication key
+//zenrpc:400 Validation Error
+//zenrpc:500 Internal Error
+func (s AuthService) SignUp(ctx context.Context, params SignUpParams) (string, error) {
+	if err := validateRegisterCredentials(params.Login, params.Password); err != nil {
+		return "", err
+	}
+
+	profile := CandidateProfile{
+		Login:       params.Login,
+		Name:        params.Name,
+		Handle:      strDefault(params.Handle, params.Login),
+		City:        params.City,
+		Age:         params.Age,
+		Bio:         params.Bio,
+		AvatarColor: params.AvatarColor,
+		Initials:    strDefault(params.Initials, defaultInitials(params.Login)),
+		AvatarURL:   params.AvatarURL,
+		Strengths:   params.Strengths,
+		Weaknesses:  params.Weaknesses,
+	}
+	if ve := validateProfileFields(profile); ve.HasErrors() {
+		return "", ve.Error()
+	}
+
+	avatarURL, err := normalizeLink(profile.AvatarURL)
+	if err != nil {
+		return "", err
+	}
+	profile.AvatarURL = avatarURL
+	return s.signUpUser(ctx, params.Password, profile)
+}
+
+// strDefault returns *p when non-nil and non-empty, fallback otherwise.
+func strDefault(p *string, fallback string) string {
+	if p != nil && *p != "" {
+		return *p
+	}
+	return fallback
+}
+
 // dummyBcryptHash is a precomputed bcrypt hash used to keep timing of
 // failed-login responses comparable between "user not found" and "user found
 // but wrong password" paths. Without this, response time leaks user existence.
@@ -235,6 +284,89 @@ func (s AuthService) registerUser(ctx context.Context, login, password string) (
 			return txErr
 		}
 		s.Print(ctx, "candidate registered", "candidateId", created.ID, "stageId", stage.ID)
+		return nil
+	})
+	if err != nil {
+		if mapped := mapAuthErr(err); mapped != nil {
+			return "", mapped
+		}
+		return "", InternalError(err)
+	}
+	return authKey, nil
+}
+
+// signUpUser is the SignUp counterpart of registerUser: same advisory-lock +
+// transaction shape, but persists the full profile payload instead of only
+// login/handle/initials.
+func (s AuthService) signUpUser(ctx context.Context, password string, profile CandidateProfile) (string, error) {
+	hash, err := passwordHash(password)
+	if err != nil {
+		return "", InternalError(err)
+	}
+
+	var authKey string
+	lockName := "rpc-auth-signup-" + profile.Login
+	err = s.dbo.RunInLock(ctx, lockName, func(tx *pg.Tx) error {
+		txRepo := s.repo.WithTransaction(tx)
+
+		existing, txErr := txRepo.OneCandidate(ctx, &db.CandidateSearch{Login: &profile.Login})
+		if txErr != nil {
+			return txErr
+		}
+		if existing != nil {
+			return ErrLoginTaken
+		}
+		existingHandle, txErr := txRepo.OneCandidate(ctx, &db.CandidateSearch{Handle: &profile.Handle})
+		if txErr != nil {
+			return txErr
+		}
+		if existingHandle != nil {
+			return ErrHandleTaken
+		}
+
+		stage, txErr := txRepo.NextStageAfter(ctx, 0)
+		if txErr != nil {
+			return txErr
+		}
+		if stage == nil {
+			return ErrNoStagesAvailable
+		}
+
+		cand := &db.Candidate{
+			Name:           profile.Name,
+			Handle:         profile.Handle,
+			Login:          profile.Login,
+			Password:       hash,
+			City:           profile.City,
+			Age:            profile.Age,
+			Bio:            profile.Bio,
+			AvatarColor:    profile.AvatarColor,
+			Initials:       profile.Initials,
+			AvatarUrl:      profile.AvatarURL,
+			Strengths:      nilToEmpty(profile.Strengths),
+			Weaknesses:     nilToEmpty(profile.Weaknesses),
+			CurrentStageID: stage.ID,
+			StatusID:       db.StatusEnabled,
+		}
+		created, txErr := txRepo.AddCandidate(ctx, cand)
+		if txErr != nil {
+			if db.IsUniqueViolation(txErr) {
+				// Pre-checks above already rejected duplicate login/handle,
+				// so a unique violation here is a race-with-another-writer.
+				// Mapping to ErrLoginTaken keeps the caller-visible behaviour
+				// consistent with registerUser.
+				return ErrLoginTaken
+			}
+			return txErr
+		}
+		if _, txErr = txRepo.CreateCandidateStage(ctx, created.ID, stage); txErr != nil {
+			return txErr
+		}
+		authKey = generateAuthKey()
+		if _, txErr = txRepo.AuthenticateCandidate(ctx, created, authKey); txErr != nil {
+			return txErr
+		}
+		s.Print(ctx, "candidate signed up", "candidateId", created.ID, "stageId", stage.ID)
 		return nil
 	})
 	if err != nil {

@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"apisrv/pkg/db"
+
 	. "github.com/smartystreets/goconvey/convey"
 )
 
@@ -85,6 +87,118 @@ func TestDB_AuthService_Register(t *testing.T) {
 				long[i] = 'a'
 			}
 			_, err := auth.Register(ctx, "ok.login", string(long), UserTypeUser)
+			So(err, ShouldEqual, ErrPasswordPolicy)
+		})
+	})
+}
+
+func TestDB_AuthService_SignUp(t *testing.T) {
+	Convey("AuthService.SignUp", t, func() {
+		f := newRPCFixtures(t)
+		ctx := t.Context()
+		auth := f.auth
+
+		Convey("happy path: persists every basic field, defaults handle/initials", func() {
+			stages := makeStages(t, ctx, f.stage, 2)
+			age := 27
+			avatar := "https://example.com/a.png"
+			key, err := auth.SignUp(ctx, SignUpParams{
+				Login:       "polly.signup",
+				Password:    "passw0rd!",
+				Name:        "Полина Знаменская",
+				City:        "Москва",
+				Age:         &age,
+				Bio:         "frontend engineer",
+				AvatarColor: "#5b8def",
+				AvatarURL:   &avatar,
+				Strengths:   []string{"go", "react"},
+				Weaknesses:  []string{"docs"},
+			})
+			So(err, ShouldBeNil)
+			So(len(key), ShouldBeGreaterThan, 20)
+
+			cand, err := f.repo.EnabledCandidateByAuthKey(ctx, key)
+			So(err, ShouldBeNil)
+			So(cand, ShouldNotBeNil)
+			So(cand.Login, ShouldEqual, "polly.signup")
+			So(cand.Handle, ShouldEqual, "polly.signup")
+			So(cand.Name, ShouldEqual, "Полина Знаменская")
+			So(cand.City, ShouldEqual, "Москва")
+			So(*cand.Age, ShouldEqual, 27)
+			So(cand.Bio, ShouldEqual, "frontend engineer")
+			So(cand.AvatarColor, ShouldEqual, "#5b8def")
+			So(cand.Initials, ShouldEqual, "PO")
+			So(*cand.AvatarUrl, ShouldEqual, avatar)
+			So(cand.Strengths, ShouldResemble, []string{"go", "react"})
+			So(cand.Weaknesses, ShouldResemble, []string{"docs"})
+			So(cand.CurrentStageID, ShouldEqual, stages[0].ID)
+		})
+
+		Convey("custom handle and initials override defaults", func() {
+			_ = makeStages(t, ctx, f.stage, 1)
+			handle := "polly.h"
+			initials := "ПЗ"
+			_, err := auth.SignUp(ctx, SignUpParams{
+				Login:    "polly.custom",
+				Password: "passw0rd!",
+				Name:     "Полина",
+				Handle:   &handle,
+				Initials: &initials,
+			})
+			So(err, ShouldBeNil)
+
+			cand, err := f.repo.OneCandidate(ctx, &db.CandidateSearch{Login: ptrString("polly.custom")})
+			So(err, ShouldBeNil)
+			So(cand.Handle, ShouldEqual, "polly.h")
+			So(cand.Initials, ShouldEqual, "ПЗ")
+		})
+
+		Convey("empty Name → ValidationError", func() {
+			_ = makeStages(t, ctx, f.stage, 1)
+			_, err := auth.SignUp(ctx, SignUpParams{
+				Login:    "polly.noname",
+				Password: "passw0rd!",
+				Name:     "",
+			})
+			So(err, ShouldNotBeNil)
+		})
+
+		Convey("duplicate login → ErrLoginTaken", func() {
+			_ = makeStages(t, ctx, f.stage, 1)
+			_, err := auth.SignUp(ctx, SignUpParams{
+				Login: "twin.signup", Password: "passw0rd!", Name: "Twin",
+			})
+			So(err, ShouldBeNil)
+			_, err = auth.SignUp(ctx, SignUpParams{
+				Login: "twin.signup", Password: "passw0rd!", Name: "Twin Two",
+			})
+			So(err, ShouldEqual, ErrLoginTaken)
+		})
+
+		Convey("duplicate handle → ErrHandleTaken", func() {
+			_ = makeStages(t, ctx, f.stage, 1)
+			handle := "common.handle"
+			_, err := auth.SignUp(ctx, SignUpParams{
+				Login: "first.signup", Password: "passw0rd!", Name: "First", Handle: &handle,
+			})
+			So(err, ShouldBeNil)
+			_, err = auth.SignUp(ctx, SignUpParams{
+				Login: "second.signup", Password: "passw0rd!", Name: "Second", Handle: &handle,
+			})
+			So(err, ShouldEqual, ErrHandleTaken)
+		})
+
+		Convey("no stages available → ErrNoStagesAvailable", func() {
+			_, err := auth.SignUp(ctx, SignUpParams{
+				Login: "polly.nostages", Password: "passw0rd!", Name: "P",
+			})
+			So(err, ShouldEqual, ErrNoStagesAvailable)
+		})
+
+		Convey("rejects bad password policy", func() {
+			_, err := auth.SignUp(ctx, SignUpParams{
+				Login: "polly.short", Password: "short", Name: "P",
+			})
 			So(err, ShouldEqual, ErrPasswordPolicy)
 		})
 	})

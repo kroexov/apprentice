@@ -628,6 +628,101 @@ func indexByHandle(list []CandidateSummary) map[string]CandidateSummary {
 	return out
 }
 
+func TestDB_CandidateService_UpdateProfile(t *testing.T) {
+	Convey("CandidateService.UpdateProfile (self-only)", t, func() {
+		f := newRPCFixtures(t)
+		ctx := t.Context()
+		_ = makeStages(t, ctx, f.stage, 1)
+
+		key, err := f.auth.SignUp(ctx, SignUpParams{
+			Login: "polly.profile", Password: "passw0rd!", Name: "Polly", AvatarColor: "#000",
+		})
+		So(err, ShouldBeNil)
+
+		dbCand, err := f.repo.EnabledCandidateByAuthKey(ctx, key)
+		So(err, ShouldBeNil)
+		candCtx := context.WithValue(ctx, candidateKey, dbCand)
+
+		baseProfile := CandidateProfile{
+			Login:       "polly.profile",
+			Name:        "Polly Updated",
+			Handle:      "polly.handle",
+			City:        "СПб",
+			Bio:         "fullstack",
+			AvatarColor: "#abc",
+			Initials:    "PU",
+			Strengths:   []string{"go"},
+			Weaknesses:  []string{"sql"},
+		}
+
+		Convey("self: updates own profile", func() {
+			out, err := f.candidate.UpdateProfile(candCtx, baseProfile)
+			So(err, ShouldBeNil)
+			So(out, ShouldNotBeNil)
+			So(out.ID, ShouldEqual, dbCand.ID)
+			So(out.Name, ShouldEqual, "Polly Updated")
+			So(out.Handle, ShouldEqual, "polly.handle")
+			So(out.City, ShouldEqual, "СПб")
+		})
+
+		Convey("anonymous → ErrForbidden (no candidate in ctx)", func() {
+			_, err := f.candidate.UpdateProfile(ctx, baseProfile)
+			So(err, ShouldEqual, ErrForbidden)
+		})
+
+		Convey("admin context → ErrForbidden (admin uses candidate.update)", func() {
+			adminUser := &db.User{ID: 1, Login: "admin", StatusID: db.StatusEnabled}
+			adminCtx := context.WithValue(ctx, adminKey, adminUser)
+			_, err := f.candidate.UpdateProfile(adminCtx, baseProfile)
+			So(err, ShouldEqual, ErrForbidden)
+		})
+
+		Convey("login change: existing authKey survives", func() {
+			renamed := baseProfile
+			renamed.Login = "polly.renamed"
+			_, err := f.candidate.UpdateProfile(candCtx, renamed)
+			So(err, ShouldBeNil)
+			cand, err := f.repo.EnabledCandidateByAuthKey(ctx, key)
+			So(err, ShouldBeNil)
+			So(cand, ShouldNotBeNil)
+			So(cand.Login, ShouldEqual, "polly.renamed")
+		})
+
+		Convey("login taken by another candidate → ErrLoginTaken", func() {
+			otherKey, err := f.auth.SignUp(ctx, SignUpParams{
+				Login: "polly.other", Password: "passw0rd!", Name: "Other", AvatarColor: "#fff",
+			})
+			So(err, ShouldBeNil)
+			So(otherKey, ShouldNotBeBlank)
+
+			renamed := baseProfile
+			renamed.Login = "polly.other"
+			_, err = f.candidate.UpdateProfile(candCtx, renamed)
+			So(err, ShouldEqual, ErrLoginTaken)
+		})
+
+		Convey("handle taken by another candidate → ErrHandleTaken", func() {
+			handle := "shared.collide"
+			_, err := f.auth.SignUp(ctx, SignUpParams{
+				Login: "polly.h2", Password: "passw0rd!", Name: "Other", Handle: &handle, AvatarColor: "#fff",
+			})
+			So(err, ShouldBeNil)
+
+			collide := baseProfile
+			collide.Handle = handle
+			_, err = f.candidate.UpdateProfile(candCtx, collide)
+			So(err, ShouldEqual, ErrHandleTaken)
+		})
+
+		Convey("empty Name → ValidationError", func() {
+			bad := baseProfile
+			bad.Name = ""
+			_, err := f.candidate.UpdateProfile(candCtx, bad)
+			So(err, ShouldNotBeNil)
+		})
+	})
+}
+
 // =============================================================================
 // DashboardService
 // =============================================================================

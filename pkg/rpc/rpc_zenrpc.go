@@ -11,30 +11,32 @@ import (
 )
 
 var RPC = struct {
-	AuthService      struct{ Login, Me, Register string }
-	CandidateService struct{ Get, GetByID, Add, Update, Delete, Advance, Rate, Rollback, SetLink, SetReady, SetAvatarURL, Kanban string }
+	AuthService      struct{ Login, Me, Register, SignUp string }
+	CandidateService struct{ Get, GetByID, Add, Update, UpdateProfile, Delete, Advance, Rate, Rollback, SetLink, SetReady, SetAvatarURL, Kanban string }
 	DashboardService struct{ Summary string }
 	MaterialService  struct{ Get, GetByID, Add, Update, Delete, SetRead, GetProgress, GetMyProgress, Score, Unscore string }
 	StageService     struct{ Get, GetByID, Add, Update, Delete, Reorder string }
 }{
-	AuthService: struct{ Login, Me, Register string }{
+	AuthService: struct{ Login, Me, Register, SignUp string }{
 		Login:    "login",
 		Me:       "me",
 		Register: "register",
+		SignUp:   "signup",
 	},
-	CandidateService: struct{ Get, GetByID, Add, Update, Delete, Advance, Rate, Rollback, SetLink, SetReady, SetAvatarURL, Kanban string }{
-		Get:          "get",
-		GetByID:      "getbyid",
-		Add:          "add",
-		Update:       "update",
-		Delete:       "delete",
-		Advance:      "advance",
-		Rate:         "rate",
-		Rollback:     "rollback",
-		SetLink:      "setlink",
-		SetReady:     "setready",
-		SetAvatarURL: "setavatarurl",
-		Kanban:       "kanban",
+	CandidateService: struct{ Get, GetByID, Add, Update, UpdateProfile, Delete, Advance, Rate, Rollback, SetLink, SetReady, SetAvatarURL, Kanban string }{
+		Get:           "get",
+		GetByID:       "getbyid",
+		Add:           "add",
+		Update:        "update",
+		UpdateProfile: "updateprofile",
+		Delete:        "delete",
+		Advance:       "advance",
+		Rate:          "rate",
+		Rollback:      "rollback",
+		SetLink:       "setlink",
+		SetReady:      "setready",
+		SetAvatarURL:  "setavatarurl",
+		Kanban:        "kanban",
 	},
 	DashboardService: struct{ Summary string }{
 		Summary: "summary",
@@ -150,6 +152,90 @@ admin first, then candidate.`,
 					500: "Internal Error",
 				},
 			},
+			"SignUp": {
+				Description: `SignUp creates a candidate with the basic profile a candidate fills on the
+registration form, and returns a fresh authKey. Credential policy matches
+Register (login regex, password 8..72). Handle defaults to Login when not
+provided, Initials defaults to defaultInitials(Login). The first available
+stage is assigned automatically; currentStageId / completedAt are not
+caller-controlled.`,
+				Parameters: []smd.JSONSchema{
+					{
+						Name:        "params",
+						Description: `SignUpParams`,
+						Type:        smd.Object,
+						TypeName:    "SignUpParams",
+						Properties: smd.PropertyList{
+							{
+								Name: "login",
+								Type: smd.String,
+							},
+							{
+								Name: "password",
+								Type: smd.String,
+							},
+							{
+								Name: "name",
+								Type: smd.String,
+							},
+							{
+								Name:     "handle",
+								Optional: true,
+								Type:     smd.String,
+							},
+							{
+								Name: "city",
+								Type: smd.String,
+							},
+							{
+								Name:     "age",
+								Optional: true,
+								Type:     smd.Integer,
+							},
+							{
+								Name: "bio",
+								Type: smd.String,
+							},
+							{
+								Name: "avatarColor",
+								Type: smd.String,
+							},
+							{
+								Name:     "initials",
+								Optional: true,
+								Type:     smd.String,
+							},
+							{
+								Name:     "avatarUrl",
+								Optional: true,
+								Type:     smd.String,
+							},
+							{
+								Name: "strengths",
+								Type: smd.Array,
+								Items: map[string]string{
+									"type": smd.String,
+								},
+							},
+							{
+								Name: "weaknesses",
+								Type: smd.Array,
+								Items: map[string]string{
+									"type": smd.String,
+								},
+							},
+						},
+					},
+				},
+				Returns: smd.JSONSchema{
+					Description: `User authentication key`,
+					Type:        smd.String,
+				},
+				Errors: map[int]string{
+					400: "Validation Error",
+					500: "Internal Error",
+				},
+			},
 		},
 	}
 }
@@ -204,6 +290,25 @@ func (s AuthService) Invoke(ctx context.Context, method string, params json.RawM
 		}
 
 		resp.Set(s.Register(ctx, args.Login, args.Password, args.UserType))
+
+	case RPC.AuthService.SignUp:
+		var args = struct {
+			Params SignUpParams `json:"params"`
+		}{}
+
+		if zenrpc.IsArray(params) {
+			if params, err = zenrpc.ConvertToObject([]string{"params"}, params); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &args); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		resp.Set(s.SignUp(ctx, args.Params))
 
 	default:
 		resp = zenrpc.NewResponseError(nil, zenrpc.MethodNotFound, "", nil)
@@ -911,6 +1016,163 @@ func (CandidateService) SMD() smd.ServiceInfo {
 					Type:        smd.Boolean,
 				},
 				Errors: map[int]string{
+					404: "Not Found",
+					400: "Validation Error",
+					500: "Internal Error",
+				},
+			},
+			"UpdateProfile": {
+				Description: `UpdateProfile updates the editable subset of the *caller's own* profile.
+Self-only: candidate-authKey required; admin requests are rejected (admin
+edits go through candidate.update). Login is editable — the existing
+authKey survives a login change (token is independent of login).
+Password / authKey / currentStageId / completedAt are not touched here.`,
+				Parameters: []smd.JSONSchema{
+					{
+						Name:        "profile",
+						Description: `CandidateProfile`,
+						Type:        smd.Object,
+						TypeName:    "CandidateProfile",
+						Properties: smd.PropertyList{
+							{
+								Name: "login",
+								Type: smd.String,
+							},
+							{
+								Name: "name",
+								Type: smd.String,
+							},
+							{
+								Name: "handle",
+								Type: smd.String,
+							},
+							{
+								Name: "city",
+								Type: smd.String,
+							},
+							{
+								Name:     "age",
+								Optional: true,
+								Type:     smd.Integer,
+							},
+							{
+								Name: "bio",
+								Type: smd.String,
+							},
+							{
+								Name: "avatarColor",
+								Type: smd.String,
+							},
+							{
+								Name: "initials",
+								Type: smd.String,
+							},
+							{
+								Name:     "avatarUrl",
+								Optional: true,
+								Type:     smd.String,
+							},
+							{
+								Name: "strengths",
+								Type: smd.Array,
+								Items: map[string]string{
+									"type": smd.String,
+								},
+							},
+							{
+								Name: "weaknesses",
+								Type: smd.Array,
+								Items: map[string]string{
+									"type": smd.String,
+								},
+							},
+						},
+					},
+				},
+				Returns: smd.JSONSchema{
+					Description: `Candidate`,
+					Optional:    true,
+					Type:        smd.Object,
+					TypeName:    "Candidate",
+					Properties: smd.PropertyList{
+						{
+							Name: "id",
+							Type: smd.Integer,
+						},
+						{
+							Name: "name",
+							Type: smd.String,
+						},
+						{
+							Name: "handle",
+							Type: smd.String,
+						},
+						{
+							Name: "login",
+							Type: smd.String,
+						},
+						{
+							Name: "city",
+							Type: smd.String,
+						},
+						{
+							Name:     "age",
+							Optional: true,
+							Type:     smd.Integer,
+						},
+						{
+							Name: "bio",
+							Type: smd.String,
+						},
+						{
+							Name: "avatarColor",
+							Type: smd.String,
+						},
+						{
+							Name: "initials",
+							Type: smd.String,
+						},
+						{
+							Name:     "avatarUrl",
+							Optional: true,
+							Type:     smd.String,
+						},
+						{
+							Name: "strengths",
+							Type: smd.Array,
+							Items: map[string]string{
+								"type": smd.String,
+							},
+						},
+						{
+							Name: "weaknesses",
+							Type: smd.Array,
+							Items: map[string]string{
+								"type": smd.String,
+							},
+						},
+						{
+							Name: "currentStageId",
+							Type: smd.Integer,
+						},
+						{
+							Name: "createdAt",
+							Type: smd.String,
+						},
+						{
+							Name: "updatedAt",
+							Type: smd.String,
+						},
+						{
+							Name:     "completedAt",
+							Optional: true,
+							Type:     smd.String,
+						},
+					},
+				},
+				Errors: map[int]string{
+					401: "Unauthorized",
+					403: "Forbidden",
 					404: "Not Found",
 					400: "Validation Error",
 					500: "Internal Error",
@@ -1817,6 +2079,25 @@ func (s CandidateService) Invoke(ctx context.Context, method string, params json
 		}
 
 		resp.Set(s.Update(ctx, args.Candidate))
+
+	case RPC.CandidateService.UpdateProfile:
+		var args = struct {
+			Profile CandidateProfile `json:"profile"`
+		}{}
+
+		if zenrpc.IsArray(params) {
+			if params, err = zenrpc.ConvertToObject([]string{"profile"}, params); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &args); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		resp.Set(s.UpdateProfile(ctx, args.Profile))
 
 	case RPC.CandidateService.Delete:
 		var args = struct {
