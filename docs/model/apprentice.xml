@@ -13,7 +13,7 @@
                 <Attribute Name="City" DBName="city" DBType="varchar" GoType="string" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="128" HasDefault="true"></Attribute>
                 <Attribute Name="Age" DBName="age" DBType="int2" GoType="*int" PK="false" Nullable="Yes" Addable="true" Updatable="true" Min="0" Max="0"></Attribute>
                 <Attribute Name="Bio" DBName="bio" DBType="text" GoType="string" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="0" HasDefault="true"></Attribute>
-                <Attribute Name="AvatarColor" DBName="avatarColor" DBType="varchar" GoType="string" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="16" HasDefault="true"></Attribute>
+                <Attribute Name="AvatarColor" DBName="avatarColor" DBType="varchar" GoType="string" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="32" HasDefault="true"></Attribute>
                 <Attribute Name="Initials" DBName="initials" DBType="varchar" GoType="string" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="3" HasDefault="true"></Attribute>
                 <Attribute Name="AvatarUrl" DBName="avatarUrl" DBType="text" GoType="*string" PK="false" Nullable="Yes" Addable="true" Updatable="true" Min="0" Max="0"></Attribute>
                 <Attribute Name="Strengths" DBName="strengths" IsArray="true" DBType="text" GoType="[]string" PK="false" Nullable="No" Addable="true" Updatable="true" Min="0" Max="0" HasDefault="true"></Attribute>

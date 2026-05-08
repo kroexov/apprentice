@@ -951,8 +951,8 @@ func validateProfileFields(p CandidateProfile) Validator {
 	if p.Age != nil && (*p.Age < 14 || *p.Age > 120) {
 		v.Append("age", FieldErrorFormat)
 	}
-	if utf8.RuneCountInString(p.AvatarColor) > 16 {
-		v.AppendMax("avatarColor", 16)
+	if utf8.RuneCountInString(p.AvatarColor) > 32 {
+		v.AppendMax("avatarColor", 32)
 	}
 	if n := utf8.RuneCountInString(p.Initials); n < 1 || n > 3 {
 		v.Append("initials", FieldErrorLen)
@@ -1017,8 +1017,8 @@ func (s CandidateService) isValid(ctx context.Context, c Candidate, isUpdate boo
 	if c.Age != nil && (*c.Age < 14 || *c.Age > 120) {
 		v.Append("age", FieldErrorFormat)
 	}
-	if utf8.RuneCountInString(c.AvatarColor) > 16 {
-		v.AppendMax("avatarColor", 16)
+	if utf8.RuneCountInString(c.AvatarColor) > 32 {
+		v.AppendMax("avatarColor", 32)
 	}
 	if n := utf8.RuneCountInString(c.Initials); n < 1 || n > 3 {
 		v.Append("initials", FieldErrorLen)

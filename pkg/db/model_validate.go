@@ -87,7 +87,7 @@ func (c Candidate) Validate() (errors map[string]string, valid bool) {
 		errors[Columns.Candidate.City] = ErrMaxLength
 	}
 
-	if utf8.RuneCountInString(c.AvatarColor) > 16 {
+	if utf8.RuneCountInString(c.AvatarColor) > 32 {
 		errors[Columns.Candidate.AvatarColor] = ErrMaxLength
 	}
 

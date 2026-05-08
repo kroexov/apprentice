@@ -174,7 +174,7 @@ CREATE TABLE "candidates" (
 	"city" varchar(128) NOT NULL DEFAULT '',
 	"age" int2,
 	"bio" text NOT NULL DEFAULT '',
-	"avatarColor" varchar(16) NOT NULL DEFAULT '',
+	"avatarColor" varchar(32) NOT NULL DEFAULT '',
 	"initials" varchar(3) NOT NULL DEFAULT '',
 	"avatarUrl" text,
 	"strengths" text[] NOT NULL DEFAULT ARRAY[]::text[],
