@@ -50,23 +50,21 @@
 
 ### Доменная модель
 
-Полный контракт API — в [`docs/RPC.md`](docs/RPC.md), исходная схема — в [`docs/apisrv.sql`](docs/apisrv.sql). Сущности:
+Полный контракт API с полями и валидациями — в [`docs/RPC.md`](docs/RPC.md), исходная схема — в [`docs/apisrv.sql`](docs/apisrv.sql). Кратко, за что отвечает каждая сущность:
 
-- **`stages`** — этапы курса. Поля: `stageId`, `alias` (slug, regex `^[a-z0-9.\-_]{2,64}$`), `order` (порядковый номер), `title` (≤ 255), `shortTitle` (≤ 64), `description`, `maxScore` (1..100, дефолт 10), `deadlineDays` (0..365, дефолт 0; 0 = без дедлайна), `statusId`. `alias` и `order` уникальны **partial** (`WHERE statusId <> 3`), так что после soft-delete значение освобождается. `stage.reorder` использует двухфазное обновление с большим offset, чтобы не упасть на UNIQUE при перетасовке.
-- **`candidates`** — ученик. Помимо профильных полей (`name`, `handle`, `city`, `age`, `bio`, `avatarColor`, `initials`, `avatarUrl`, `strengths[]`, `weaknesses[]`) кандидат — **полноценный пользователь сервиса**: у него есть собственные `login`, `password` (bcrypt cost-14), `authKey` (32-символьный URL-safe токен), `lastActivityAt`. CHECK-констрейнты на уровне БД: `age` 14..120 либо `NULL`, `handle`/`login` regex `^[a-z0-9.\-_]{2,40}$`, `initials` 1..3 символа, `strengths`/`weaknesses` до 10 штук. `handle` и `login` уникальны partial (по не-удалённым). Индекс `IX_candidates_authKey` partial по `authKey IS NOT NULL` — для быстрого lookup в middleware. `currentStageId` — указатель на текущий этап (FK на `stages` с `ON DELETE RESTRICT`), `completedAt` ставится при `advance` последнего этапа.
-- **`candidateStages`** — прохождение этапа кандидатом (это именно та сущность, что в `FUNCTIONALITY.md` черновиком названа `StageScore`, но в коде и схеме — `CandidateStage`). Объединяет «попадание на этап» и «оценку за этап» в одну строку. Поля: `candidateStageId`, `candidateId` (FK ON DELETE CASCADE), `stageId` (FK RESTRICT), `link` (ссылка на сданную работу), `score` (1..100 либо NULL), `scoredAt`, `scoredBy` (FK на `users`, ON DELETE SET NULL), `deadline` (`createdAt + stage.deadlineDays`, фиксируется в момент попадания и **не пересчитывается** при изменении этапа), `isReady`/`setReadyAt`/`retries` (workflow «готово к проверке»; на admin-`setReady(false)` поверх `true` `retries` инкрементится), `createdAt`. Уникальность по `(candidateId, stageId)`. CHECK-констрейнт `scored_consistency`: `score` и `scoredAt` либо оба `NULL`, либо оба `NOT NULL`.
-- **`materials`** — теоретические материалы (книги/статьи/видео/тесты/прочее). `type` ограничен enum через CHECK (`book|article|video|test|other`), `url` ≤ 2048 (тоже CHECK), `maxScore` 1..100, `order` для сортировки в UI. `title` и `order` уникальны partial (по не-удалённым).
-- **`candidateMaterials`** — прогресс кандидата по материалу. Уникальность по `(candidateId, materialId)`, запись создаётся **лениво**: либо первой попыткой `material.setRead(true)` (тогда `readAt = now()`, `score`/`scoredAt`/`scoredBy` = NULL), либо первой админской оценкой через `material.score` (тогда `readAt` может остаться NULL, а `score`/`scoredAt`/`scoredBy` заполнены). До этого пары в БД нет, и UI трактует ячейку как «не отмечен». `readAt` фиксирует **момент первой отметки** — повторный `setRead(true)` его не сдвигает. CHECK-констрейнт `scored_consistency`: `score`/`scoredAt`/`scoredBy` все вместе `NULL` или все вместе `NOT NULL`. FK: `candidateId` ON DELETE CASCADE, `materialId` ON DELETE RESTRICT, `scoredBy` ON DELETE SET NULL.
-- **`users`** — админы/менторы. Те же `login`/`password`/`authKey`/`lastActivityAt`, что и у кандидатов, но в отдельной таблице. Самостоятельная регистрация админов отключена — заводятся только сидом или вручную в БД.
-- **`statuses`** — справочник из трёх строк (1 = enabled, 2 = disabled, 3 = deleted). Soft-delete по всему проекту — это `statusId → 3`, отфильтровывается `StatusFilter` в репозиториях. Партиальные уникальные индексы (`handle`/`login`/`alias`/`order`/`title`) — `WHERE statusId <> 3`, так что после удаления значения переиспользуются.
+- **`stages`** — справочник этапов курса, через которые последовательно проходят кандидаты.
+- **`candidates`** — ученики; одновременно полноценные пользователи сервиса (свой логин/пароль/authKey, могут логиниться и редактировать профиль).
+- **`candidateStages`** — прохождение конкретного этапа конкретным кандидатом: ссылка на сданную работу, оценка ментора, дедлайн, флаг «готово к проверке» и счётчик доработок. Одна строка покрывает и «попадание на этап», и «оценку за этап».
+- **`materials`** — каталог теоретических материалов курса (книги, статьи, видео, тесты).
+- **`candidateMaterials`** — прогресс кандидата по материалу: отметка «прочитано» от ученика и оценка от ментора. Создаётся лениво — при первой отметке или первой оценке.
+- **`users`** — админы/менторы (самостоятельная регистрация отключена — заводятся сидом или вручную).
+- **`statuses`** — справочник из трёх строк (`enabled`/`disabled`/`deleted`). Soft-delete по всему проекту — это `statusId → 3`.
 
-#### Ключевые инварианты и операции
+#### Ключевые операции
 
-- **`candidateStages` инвариант**: для каждого незавершённого (`completedAt IS NULL`) кандидата существует **ровно одна** запись без оценки — для его `currentStageId`. Все более ранние записи имеют не-NULL `score`/`scoredAt`. У завершённого — все записи оценены, `currentStageId` остаётся на последнем этапе.
-- **Создание `candidateStages` всегда автоматическое** — через `candidate.add` / `auth.register` / `auth.signUp` (для начального этапа = первый активный stage) и `candidate.advance` (для следующего). Прямого RPC для создания записи нет.
-- **`candidate.advance` (главная операция)** — атомарно: проставляет `score`/`scoredAt` пустой записи текущего этапа → создаёт пустую запись для следующего (или ставит `completedAt`, если этапов больше нет) → двигает `currentStageId`.
-- **Откат (`candidate.rollback`)** — удаляет пустую запись текущего этапа и стирает `score`/`scoredAt` у предыдущей; кандидат «возвращается» на этап без оценки. `deadline` не пересчитывается.
-- **`isReady` workflow**: чтобы кандидат поставил `setReady(true)`, у `candidateStage` должен быть прикреплён `link`. Админ может снять `setReady` обратно — тогда `retries` атомарно инкрементится (для трекинга количества доработок).
+- **`candidate.advance`** (главная) — атомарно проставляет оценку текущему этапу, заводит запись для следующего и сдвигает указатель `currentStageId`. На последнем этапе вместо этого ставится `completedAt`.
+- **`candidate.rollback`** — возвращает кандидата на шаг назад, стирая последнюю оценку.
+- **`candidate.setReady` / `material.setRead`** — кандидатские сигналы готовности к проверке. **`candidate.rate` / `material.score`** — админские оценки.
 
 #### Три уровня доступа
 
@@ -76,20 +74,9 @@
 - **registered** — нужен любой валидный authKey, admin **или** candidate (`auth.me`, `candidate.setLink`, `candidate.setAvatarUrl`, `candidate.setReady`, `candidate.updateProfile`, `material.setRead`, `material.getMyProgress`); кандидат может менять только свои объекты, админ — любые.
 - **protected** (всё остальное) — только admin. Кандидатский authKey возвращает `401`.
 
-В `candidateStages.scoredBy`/`candidateMaterials.scoredBy` пишется `userId` админа из контекста; кандидаты сами оценок не ставят.
-
 #### Сидинг
 
-`docs/init.sql` идемпотентен (re-run = no-op). В нём:
-
-- Справочник `statuses` (3 строки).
-- Один админ — `admin` / пароль `12345` (bcrypt cost-14).
-- 15 этапов реального курса (черновик проекта → правки → программирование в Word → MR → pgDesigner → go-pg → mfd-generator → colgen → JWT → zenrpc → SPA → фронт-клиент → финальная фича → финальный MR → созвон с админом).
-- 5 сидовых кандидатов (логины `ivan.sokolov`, `maria.petrova`, `alex.ivanov`, `olga.novikova`, `dmitry.kuznetsov`), пароль у всех тоже `12345`.
-
-#### VFS-таблицы
-
-В `apisrv.sql` присутствуют `vfsFiles`, `vfsFolders`, `vfsHashes` — это инфраструктура шаблона `gold-apisrv`. В apprentice они не используются (см. секцию «Что можно вырезать»).
+`docs/init.sql` идемпотентен (re-run = no-op). Заводит справочник `statuses`, одного админа `admin` / пароль `12345`, 15 этапов реального курса и 5 сидовых кандидатов (`ivan.sokolov`, `maria.petrova`, `alex.ivanov`, `olga.novikova`, `dmitry.kuznetsov`) с тем же паролем.
 
 ### HTTP-поверхность
 
