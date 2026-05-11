@@ -492,6 +492,11 @@ func (CandidateService) SMD() smd.ServiceInfo {
 									Name: "retries",
 									Type: smd.Integer,
 								},
+								{
+									Name:     "notes",
+									Optional: true,
+									Type:     smd.String,
+								},
 							},
 						},
 					},
@@ -676,6 +681,11 @@ func (CandidateService) SMD() smd.ServiceInfo {
 									Name: "retries",
 									Type: smd.Integer,
 								},
+								{
+									Name:     "notes",
+									Optional: true,
+									Type:     smd.String,
+								},
 							},
 						},
 						"CandidateStageHistory": {
@@ -741,6 +751,11 @@ func (CandidateService) SMD() smd.ServiceInfo {
 								{
 									Name: "retries",
 									Type: smd.Integer,
+								},
+								{
+									Name:     "notes",
+									Optional: true,
+									Type:     smd.String,
 								},
 							},
 						},
@@ -1197,7 +1212,9 @@ Password / authKey / currentStageId / completedAt are not touched here.`,
 				},
 			},
 			"Advance": {
-				Description: `Advance scores current stage; moves to next or sets completedAt if last.`,
+				Description: `Advance scores current stage; moves to next or sets completedAt if last.
+notes is optional; nil / whitespace-only preserves any prior notes
+(COALESCE-style), a non-empty value overwrites.`,
 				Parameters: []smd.JSONSchema{
 					{
 						Name: "candidateID",
@@ -1207,6 +1224,12 @@ Password / authKey / currentStageId / completedAt are not touched here.`,
 						Name:        "score",
 						Description: `int`,
 						Type:        smd.Integer,
+					},
+					{
+						Name:        "notes",
+						Optional:    true,
+						Description: `*string`,
+						Type:        smd.String,
 					},
 				},
 				Returns: smd.JSONSchema{
@@ -1359,6 +1382,11 @@ Password / authKey / currentStageId / completedAt are not touched here.`,
 									Name: "retries",
 									Type: smd.Integer,
 								},
+								{
+									Name:     "notes",
+									Optional: true,
+									Type:     smd.String,
+								},
 							},
 						},
 					},
@@ -1370,7 +1398,9 @@ Password / authKey / currentStageId / completedAt are not touched here.`,
 				},
 			},
 			"Rate": {
-				Description: `Rate sets or corrects score on a CandidateStage; does not move stage.`,
+				Description: `Rate sets or corrects score on a CandidateStage; does not move stage.
+notes is optional; nil / whitespace-only preserves any prior notes
+(COALESCE-style), a non-empty value overwrites.`,
 				Parameters: []smd.JSONSchema{
 					{
 						Name: "candidateStageID",
@@ -1380,6 +1410,12 @@ Password / authKey / currentStageId / completedAt are not touched here.`,
 						Name:        "score",
 						Description: `int`,
 						Type:        smd.Integer,
+					},
+					{
+						Name:        "notes",
+						Optional:    true,
+						Description: `*string`,
+						Type:        smd.String,
 					},
 				},
 				Returns: smd.JSONSchema{
@@ -1436,6 +1472,11 @@ Password / authKey / currentStageId / completedAt are not touched here.`,
 						{
 							Name: "retries",
 							Type: smd.Integer,
+						},
+						{
+							Name:     "notes",
+							Optional: true,
+							Type:     smd.String,
 						},
 					},
 				},
@@ -1609,6 +1650,11 @@ Password / authKey / currentStageId / completedAt are not touched here.`,
 							Name: "retries",
 							Type: smd.Integer,
 						},
+						{
+							Name:     "notes",
+							Optional: true,
+							Type:     smd.String,
+						},
 					},
 				},
 				Errors: map[int]string{
@@ -1688,6 +1734,11 @@ preconditions; allowed at any time, including after the stage is scored.`,
 						{
 							Name: "retries",
 							Type: smd.Integer,
+						},
+						{
+							Name:     "notes",
+							Optional: true,
+							Type:     smd.String,
 						},
 					},
 				},
@@ -1986,6 +2037,11 @@ JSON tag, and Candidate.AvatarURL ships json:avatarUrl — keep them in sync.`,
 									Name: "retries",
 									Type: smd.Integer,
 								},
+								{
+									Name:     "notes",
+									Optional: true,
+									Type:     smd.String,
+								},
 							},
 						},
 					},
@@ -2120,12 +2176,13 @@ func (s CandidateService) Invoke(ctx context.Context, method string, params json
 
 	case RPC.CandidateService.Advance:
 		var args = struct {
-			CandidateID int `json:"candidateID"`
-			Score       int `json:"score"`
+			CandidateID int     `json:"candidateID"`
+			Score       int     `json:"score"`
+			Notes       *string `json:"notes"`
 		}{}
 
 		if zenrpc.IsArray(params) {
-			if params, err = zenrpc.ConvertToObject([]string{"candidateID", "score"}, params); err != nil {
+			if params, err = zenrpc.ConvertToObject([]string{"candidateID", "score", "notes"}, params); err != nil {
 				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
 			}
 		}
@@ -2136,16 +2193,17 @@ func (s CandidateService) Invoke(ctx context.Context, method string, params json
 			}
 		}
 
-		resp.Set(s.Advance(ctx, args.CandidateID, args.Score))
+		resp.Set(s.Advance(ctx, args.CandidateID, args.Score, args.Notes))
 
 	case RPC.CandidateService.Rate:
 		var args = struct {
-			CandidateStageID int `json:"candidateStageID"`
-			Score            int `json:"score"`
+			CandidateStageID int     `json:"candidateStageID"`
+			Score            int     `json:"score"`
+			Notes            *string `json:"notes"`
 		}{}
 
 		if zenrpc.IsArray(params) {
-			if params, err = zenrpc.ConvertToObject([]string{"candidateStageID", "score"}, params); err != nil {
+			if params, err = zenrpc.ConvertToObject([]string{"candidateStageID", "score", "notes"}, params); err != nil {
 				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
 			}
 		}
@@ -2156,7 +2214,7 @@ func (s CandidateService) Invoke(ctx context.Context, method string, params json
 			}
 		}
 
-		resp.Set(s.Rate(ctx, args.CandidateStageID, args.Score))
+		resp.Set(s.Rate(ctx, args.CandidateStageID, args.Score, args.Notes))
 
 	case RPC.CandidateService.Rollback:
 		var args = struct {

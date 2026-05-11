@@ -201,6 +201,7 @@ type CandidateStageHistory struct {
 	IsReady          bool    `json:"isReady"`
 	SetReadyAt       *string `json:"setReadyAt"`
 	Retries          int     `json:"retries"`
+	Notes            *string `json:"notes"`
 }
 
 const (
@@ -221,6 +222,7 @@ type CandidateStageSummary struct {
 	IsReady    bool    `json:"isReady"`
 	SetReadyAt *string `json:"setReadyAt"`
 	Retries    int     `json:"retries"`
+	Notes      *string `json:"notes"`
 }
 
 // CandidateSummary — кандидат с агрегатами для списка/канбана.
@@ -274,6 +276,7 @@ type CandidateStage struct {
 	IsReady     bool    `json:"isReady"`
 	SetReadyAt  *string `json:"setReadyAt"`
 	Retries     int     `json:"retries"`
+	Notes       *string `json:"notes"`
 }
 
 func NewCandidateStage(d *db.CandidateStage) *CandidateStage {
@@ -292,6 +295,7 @@ func NewCandidateStage(d *db.CandidateStage) *CandidateStage {
 		IsReady:     d.IsReady,
 		SetReadyAt:  formatTimePtr(d.SetReadyAt),
 		Retries:     d.Retries,
+		Notes:       d.Notes,
 	}
 }
 

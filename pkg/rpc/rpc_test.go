@@ -198,7 +198,7 @@ func TestDB_StageService_CRUD(t *testing.T) {
 		Convey("Delete: refuses if scores exist", func() {
 			stages := makeStages(t, ctx, f.stage, 2)
 			c := makeCandidate(t, ctx, f.candidate, "h.one", stages[0].ID)
-			_, err := f.candidate.Advance(ctx, c.ID, 7)
+			_, err := f.candidate.Advance(ctx, c.ID, 7, nil)
 			So(err, ShouldBeNil)
 
 			_, err = f.stage.Delete(ctx, stages[0].ID)
@@ -358,7 +358,7 @@ func TestDB_CandidateService_Advance(t *testing.T) {
 		c := makeCandidate(t, ctx, f.candidate, "ivan.s", stages[0].ID)
 
 		Convey("Advance: scores current stage and moves to next", func() {
-			res, err := f.candidate.Advance(ctx, c.ID, 7)
+			res, err := f.candidate.Advance(ctx, c.ID, 7, nil)
 			So(err, ShouldBeNil)
 			So(res, ShouldNotBeNil)
 			So(res.CandidateStage.Score, ShouldNotBeNil)
@@ -369,18 +369,18 @@ func TestDB_CandidateService_Advance(t *testing.T) {
 		})
 
 		Convey("Advance: last stage sets completedAt and keeps current pointer", func() {
-			_, err := f.candidate.Advance(ctx, c.ID, 5)
+			_, err := f.candidate.Advance(ctx, c.ID, 5, nil)
 			So(err, ShouldBeNil)
-			_, err = f.candidate.Advance(ctx, c.ID, 6)
+			_, err = f.candidate.Advance(ctx, c.ID, 6, nil)
 			So(err, ShouldBeNil)
-			res, err := f.candidate.Advance(ctx, c.ID, 7)
+			res, err := f.candidate.Advance(ctx, c.ID, 7, nil)
 			So(err, ShouldBeNil)
 			So(res.Candidate.CompletedAt, ShouldNotBeNil)
 			So(res.Candidate.CurrentStageID, ShouldEqual, stages[2].ID)
 		})
 
 		Convey("Advance: blocks duplicate score for same stage", func() {
-			_, err := f.candidate.Advance(ctx, c.ID, 5)
+			_, err := f.candidate.Advance(ctx, c.ID, 5, nil)
 			So(err, ShouldBeNil)
 
 			// Force the candidate back to stage 1 (which already has a scored
@@ -390,33 +390,33 @@ func TestDB_CandidateService_Advance(t *testing.T) {
 			cur.CurrentStageID = stages[0].ID
 			_, _ = f.repo.UpdateCandidate(ctx, cur, db.WithColumns(db.Columns.Candidate.CurrentStageID))
 
-			_, err = f.candidate.Advance(ctx, c.ID, 5)
+			_, err = f.candidate.Advance(ctx, c.ID, 5, nil)
 			So(err, ShouldEqual, ErrAlreadyScored)
 		})
 
 		Convey("Advance: blocks completed candidate", func() {
-			_, _ = f.candidate.Advance(ctx, c.ID, 5)
-			_, _ = f.candidate.Advance(ctx, c.ID, 5)
-			_, _ = f.candidate.Advance(ctx, c.ID, 5)
-			_, err := f.candidate.Advance(ctx, c.ID, 5)
+			_, _ = f.candidate.Advance(ctx, c.ID, 5, nil)
+			_, _ = f.candidate.Advance(ctx, c.ID, 5, nil)
+			_, _ = f.candidate.Advance(ctx, c.ID, 5, nil)
+			_, err := f.candidate.Advance(ctx, c.ID, 5, nil)
 			So(err, ShouldEqual, ErrAlreadyCompleted)
 		})
 
 		Convey("Advance: enforces score range against stage maxScore", func() {
-			_, err := f.candidate.Advance(ctx, c.ID, 0)
+			_, err := f.candidate.Advance(ctx, c.ID, 0, nil)
 			So(err, ShouldEqual, ErrScoreOutOfRange)
-			_, err = f.candidate.Advance(ctx, c.ID, 999)
+			_, err = f.candidate.Advance(ctx, c.ID, 999, nil)
 			So(err, ShouldEqual, ErrScoreOutOfRange)
 		})
 
 		Convey("Advance: 404 on unknown candidate", func() {
-			_, err := f.candidate.Advance(ctx, 999, 5)
+			_, err := f.candidate.Advance(ctx, 999, 5, nil)
 			So(err, ShouldEqual, ErrCandidateNotFound)
 		})
 
 		Convey("Rate: corrects an existing score", func() {
-			res, _ := f.candidate.Advance(ctx, c.ID, 5)
-			updated, err := f.candidate.Rate(ctx, res.CandidateStage.ID, 9)
+			res, _ := f.candidate.Advance(ctx, c.ID, 5, nil)
+			updated, err := f.candidate.Rate(ctx, res.CandidateStage.ID, 9, nil)
 			So(err, ShouldBeNil)
 			So(updated.Score, ShouldNotBeNil)
 			So(*updated.Score, ShouldEqual, 9)
@@ -424,19 +424,55 @@ func TestDB_CandidateService_Advance(t *testing.T) {
 		})
 
 		Convey("Rate: rejects out-of-range", func() {
-			res, _ := f.candidate.Advance(ctx, c.ID, 5)
-			_, err := f.candidate.Rate(ctx, res.CandidateStage.ID, 999)
+			res, _ := f.candidate.Advance(ctx, c.ID, 5, nil)
+			_, err := f.candidate.Rate(ctx, res.CandidateStage.ID, 999, nil)
 			So(err, ShouldEqual, ErrScoreOutOfRange)
 		})
 
 		Convey("Rate: 404 for unknown candidateStageId", func() {
-			_, err := f.candidate.Rate(ctx, 999, 5)
+			_, err := f.candidate.Rate(ctx, 999, 5, nil)
 			So(err, ShouldEqual, ErrCandidateStageNotFound)
 		})
 
+		Convey("Advance: persists notes and returns them in response", func() {
+			notes := "  good work, ship it  "
+			res, err := f.candidate.Advance(ctx, c.ID, 7, &notes)
+			So(err, ShouldBeNil)
+			So(res.CandidateStage.Notes, ShouldNotBeNil)
+			So(*res.CandidateStage.Notes, ShouldEqual, "good work, ship it")
+		})
+
+		Convey("Advance: whitespace-only notes treated as no notes", func() {
+			ws := "   \t  "
+			res, err := f.candidate.Advance(ctx, c.ID, 7, &ws)
+			So(err, ShouldBeNil)
+			So(res.CandidateStage.Notes, ShouldBeNil)
+		})
+
+		Convey("Rate: COALESCE — nil notes preserves prior comment", func() {
+			first := "first round comment"
+			res, err := f.candidate.Advance(ctx, c.ID, 5, &first)
+			So(err, ShouldBeNil)
+			updated, err := f.candidate.Rate(ctx, res.CandidateStage.ID, 9, nil)
+			So(err, ShouldBeNil)
+			So(updated.Notes, ShouldNotBeNil)
+			So(*updated.Notes, ShouldEqual, "first round comment")
+		})
+
+		Convey("Rate: non-empty notes overwrites prior value", func() {
+			first := "first"
+			res, err := f.candidate.Advance(ctx, c.ID, 5, &first)
+			So(err, ShouldBeNil)
+			second := "second"
+			updated, err := f.candidate.Rate(ctx, res.CandidateStage.ID, 9, &second)
+			So(err, ShouldBeNil)
+			So(updated.Notes, ShouldNotBeNil)
+			So(*updated.Notes, ShouldEqual, "second")
+		})
+
 		Convey("Rollback: deletes latest score and moves back", func() {
-			_, _ = f.candidate.Advance(ctx, c.ID, 5)
-			res2, _ := f.candidate.Advance(ctx, c.ID, 6)
+			_, _ = f.candidate.Advance(ctx, c.ID, 5, nil)
+			res2, _ := f.candidate.Advance(ctx, c.ID, 6, nil)
 			So(res2.Candidate.CurrentStageID, ShouldEqual, stages[2].ID)
 
 			out, err := f.candidate.Rollback(ctx, c.ID)
@@ -446,9 +482,9 @@ func TestDB_CandidateService_Advance(t *testing.T) {
 		})
 
 		Convey("Rollback: clears completedAt when rolling back from finished", func() {
-			_, _ = f.candidate.Advance(ctx, c.ID, 5)
-			_, _ = f.candidate.Advance(ctx, c.ID, 6)
-			_, _ = f.candidate.Advance(ctx, c.ID, 7)
+			_, _ = f.candidate.Advance(ctx, c.ID, 5, nil)
+			_, _ = f.candidate.Advance(ctx, c.ID, 6, nil)
+			_, _ = f.candidate.Advance(ctx, c.ID, 7, nil)
 
 			out, err := f.candidate.Rollback(ctx, c.ID)
 			So(err, ShouldBeNil)
@@ -480,9 +516,9 @@ func TestDB_CandidateService_Aggregates(t *testing.T) {
 		alpha := makeCandidate(t, ctx, f.candidate, "alpha", stages[0].ID)
 		beta := makeCandidate(t, ctx, f.candidate, "beta", stages[0].ID)
 		gamma := makeCandidate(t, ctx, f.candidate, "gamma", stages[0].ID)
-		_, _ = f.candidate.Advance(ctx, beta.ID, 8)  // beta now at stage 2, totalPoints=8
-		_, _ = f.candidate.Advance(ctx, gamma.ID, 5) // gamma at 2, totalPoints=5
-		_, _ = f.candidate.Advance(ctx, gamma.ID, 9) // gamma at 3, totalPoints=14
+		_, _ = f.candidate.Advance(ctx, beta.ID, 8, nil)  // beta now at stage 2, totalPoints=8
+		_, _ = f.candidate.Advance(ctx, gamma.ID, 5, nil) // gamma at 2, totalPoints=5
+		_, _ = f.candidate.Advance(ctx, gamma.ID, 9, nil) // gamma at 3, totalPoints=14
 
 		Convey("sort by points: descending totalPoints", func() {
 			list, err := f.candidate.Get(ctx, CandidateSortPoints)
@@ -550,6 +586,33 @@ func TestDB_CandidateService_Aggregates(t *testing.T) {
 			So(*detail.History[1].Score, ShouldEqual, 9)
 		})
 
+		Convey("GetByID: history and currentCandidateStage carry notes when set", func() {
+			// Attach a note to a previously-scored stage[0] row via Rate, and
+			// to gamma's current empty row via repo write (no RPC for setNotes).
+			doneCS := loadCurrentCandidateStage(t, ctx, f.repo, gamma.ID, stages[0].ID)
+			doneNotes := "stage 0 retro note"
+			_, err := f.candidate.Rate(ctx, doneCS.ID, *doneCS.Score, &doneNotes)
+			So(err, ShouldBeNil)
+
+			curCS := loadCurrentCandidateStage(t, ctx, f.repo, gamma.ID, stages[2].ID)
+			curNotes := "current stage live note"
+			curCS.Notes = &curNotes
+			_, err = f.repo.UpdateCandidateStage(ctx, curCS, db.WithColumns(db.Columns.CandidateStage.Notes))
+			So(err, ShouldBeNil)
+
+			detail, err := f.candidate.GetByID(ctx, gamma.ID)
+			So(err, ShouldBeNil)
+			So(detail.History[0].Notes, ShouldNotBeNil)
+			So(*detail.History[0].Notes, ShouldEqual, doneNotes)
+			So(detail.History[1].Notes, ShouldBeNil)
+			So(detail.History[2].Notes, ShouldNotBeNil)
+			So(*detail.History[2].Notes, ShouldEqual, curNotes)
+
+			So(detail.CurrentCandidateStage, ShouldNotBeNil)
+			So(detail.CurrentCandidateStage.Notes, ShouldNotBeNil)
+			So(*detail.CurrentCandidateStage.Notes, ShouldEqual, curNotes)
+		})
+
 		Convey("currentCandidateStage in summary tracks current stage's CandidateStage row", func() {
 			// alpha: untouched, sits on stage[0]; gamma: advanced twice, sits on stage[2].
 			alphaCS := loadCurrentCandidateStage(t, ctx, f.repo, alpha.ID, stages[0].ID)
@@ -581,7 +644,7 @@ func TestDB_CandidateService_Aggregates(t *testing.T) {
 			})
 
 			Convey("Advance moves currentCandidateStage to the new (empty) row", func() {
-				_, err := f.candidate.Advance(ctx, alpha.ID, 6)
+				_, err := f.candidate.Advance(ctx, alpha.ID, 6, nil)
 				So(err, ShouldBeNil)
 				newCS := loadCurrentCandidateStage(t, ctx, f.repo, alpha.ID, stages[1].ID)
 
@@ -747,7 +810,7 @@ func TestDB_DashboardService_Summary(t *testing.T) {
 			alpha := makeCandidate(t, ctx, f.candidate, "alpha", stages[0].ID)
 			beta := makeCandidate(t, ctx, f.candidate, "beta", stages[0].ID)
 			_, _ = alpha, beta
-			_, _ = f.candidate.Advance(ctx, beta.ID, 8) // beta now at stage 2
+			_, _ = f.candidate.Advance(ctx, beta.ID, 8, nil) // beta now at stage 2
 
 			out, err := f.dashboard.Summary(ctx)
 			So(err, ShouldBeNil)

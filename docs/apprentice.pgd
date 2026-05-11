@@ -168,6 +168,8 @@
               comment="момент последней установки isReady=true; null когда isReady снят"></column>
       <column name="retries" type="integer" nullable="false" default="0"
               comment="сколько раз админ снимал isReady=true (отправлял на доработку)"></column>
+      <column name="notes" type="text" nullable="true"
+              comment="заметка админа после личного обсуждения"></column>
       <column name="createdAt" type="timestamptz" nullable="false" default="now()"
               comment="момент попадания кандидата на этап"></column>
       <pk name="candidateStages_pkey">

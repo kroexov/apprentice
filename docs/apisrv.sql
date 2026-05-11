@@ -214,6 +214,7 @@ CREATE TABLE "candidateStages" (
 	"isReady" bool NOT NULL DEFAULT false,
 	"setReadyAt" timestamp with time zone,
 	"retries" int4 NOT NULL DEFAULT 0,
+	"notes" text,
 	"createdAt" timestamp with time zone NOT NULL DEFAULT now(),
 	CONSTRAINT "candidateStages_pkey" PRIMARY KEY ("candidateStageId"),
 	CONSTRAINT "candidateStages_candidate_stage_key" UNIQUE ("candidateId", "stageId"),

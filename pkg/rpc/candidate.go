@@ -125,6 +125,7 @@ func (s CandidateService) GetByID(ctx context.Context, id int) (*CandidateDetail
 			row.IsReady = cs.IsReady
 			row.SetReadyAt = formatTimePtr(cs.SetReadyAt)
 			row.Retries = cs.Retries
+			row.Notes = cs.Notes
 		case hasRow && cand.CompletedAt == nil && currentStage != nil && st.ID == currentStage.ID:
 			row.Status = StageStatusCurrent
 			row.CandidateStageID = &cs.ID
@@ -134,6 +135,7 @@ func (s CandidateService) GetByID(ctx context.Context, id int) (*CandidateDetail
 			row.IsReady = cs.IsReady
 			row.SetReadyAt = formatTimePtr(cs.SetReadyAt)
 			row.Retries = cs.Retries
+			row.Notes = cs.Notes
 		default:
 			row.Status = StageStatusTodo
 		}
@@ -422,18 +424,22 @@ func (s CandidateService) Delete(ctx context.Context, id int) (bool, error) {
 }
 
 // Advance scores current stage; moves to next or sets completedAt if last.
+// notes is optional; nil / whitespace-only preserves any prior notes
+// (COALESCE-style), a non-empty value overwrites.
 //
 //zenrpc:candidateId int
 //zenrpc:score int
+//zenrpc:notes *string
 //zenrpc:return AdvanceResult
 //zenrpc:400 Validation Error
 //zenrpc:404 Not Found
 //zenrpc:500 Internal Error
-func (s CandidateService) Advance(ctx context.Context, candidateID, score int) (*AdvanceResult, error) {
+func (s CandidateService) Advance(ctx context.Context, candidateID, score int, notes *string) (*AdvanceResult, error) {
 	var (
 		outCand *db.Candidate
 		outCS   *db.CandidateStage
 	)
+	cleanedNotes := normalizeNotes(notes)
 
 	err := s.dbo.RunInTransaction(ctx, func(tx *pg.Tx) error {
 		txRepo := s.repo.WithTransaction(tx)
@@ -480,8 +486,12 @@ func (s CandidateService) Advance(ctx context.Context, candidateID, score int) (
 		now := time.Now()
 		cur.Score = &score
 		cur.ScoredAt = &now
-		if _, e := txRepo.UpdateCandidateStage(ctx, cur,
-			db.WithColumns(db.Columns.CandidateStage.Score, db.Columns.CandidateStage.ScoredAt)); e != nil {
+		cols := []string{db.Columns.CandidateStage.Score, db.Columns.CandidateStage.ScoredAt}
+		if cleanedNotes != nil {
+			cur.Notes = cleanedNotes
+			cols = append(cols, db.Columns.CandidateStage.Notes)
+		}
+		if _, e := txRepo.UpdateCandidateStage(ctx, cur, db.WithColumns(cols...)); e != nil {
 			return e
 		}
 		outCS = cur
@@ -517,14 +527,17 @@ func (s CandidateService) Advance(ctx context.Context, candidateID, score int) (
 }
 
 // Rate sets or corrects score on a CandidateStage; does not move stage.
+// notes is optional; nil / whitespace-only preserves any prior notes
+// (COALESCE-style), a non-empty value overwrites.
 //
 //zenrpc:candidateStageId int
 //zenrpc:score int
+//zenrpc:notes *string
 //zenrpc:return CandidateStage
 //zenrpc:400 Validation Error
 //zenrpc:404 Not Found
 //zenrpc:500 Internal Error
-func (s CandidateService) Rate(ctx context.Context, candidateStageID, score int) (*CandidateStage, error) {
+func (s CandidateService) Rate(ctx context.Context, candidateStageID, score int, notes *string) (*CandidateStage, error) {
 	cur, err := s.repo.CandidateStageByID(ctx, candidateStageID, s.repo.FullCandidateStage())
 	if err != nil {
 		return nil, InternalError(err)
@@ -549,8 +562,12 @@ func (s CandidateService) Rate(ctx context.Context, candidateStageID, score int)
 		now := time.Now()
 		cur.ScoredAt = &now
 	}
-	if _, err := s.repo.UpdateCandidateStage(ctx, cur,
-		db.WithColumns(db.Columns.CandidateStage.Score, db.Columns.CandidateStage.ScoredAt)); err != nil {
+	cols := []string{db.Columns.CandidateStage.Score, db.Columns.CandidateStage.ScoredAt}
+	if cleaned := normalizeNotes(notes); cleaned != nil {
+		cur.Notes = cleaned
+		cols = append(cols, db.Columns.CandidateStage.Notes)
+	}
+	if _, err := s.repo.UpdateCandidateStage(ctx, cur, db.WithColumns(cols...)); err != nil {
 		return nil, InternalError(err)
 	}
 	s.Print(ctx, "candidate stage rated",
@@ -1164,6 +1181,7 @@ func newCandidateStageSummary(cs *db.CandidateStage) *CandidateStageSummary {
 		IsReady:    cs.IsReady,
 		SetReadyAt: formatTimePtr(cs.SetReadyAt),
 		Retries:    cs.Retries,
+		Notes:      cs.Notes,
 	}
 }
 

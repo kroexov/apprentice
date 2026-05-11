@@ -418,8 +418,10 @@ type CandidateStageSearch struct {
 	IsReady     *bool
 	SetReadyAt  *time.Time
 	Retries     *int
+	Notes       *string
 	CreatedAt   *time.Time
 	IDs         []int
+	NotesILike  *string
 }
 
 func (css *CandidateStageSearch) Apply(query *orm.Query) *orm.Query {
@@ -459,11 +461,17 @@ func (css *CandidateStageSearch) Apply(query *orm.Query) *orm.Query {
 	if css.Retries != nil {
 		css.where(query, Tables.CandidateStage.Alias, Columns.CandidateStage.Retries, css.Retries)
 	}
+	if css.Notes != nil {
+		css.where(query, Tables.CandidateStage.Alias, Columns.CandidateStage.Notes, css.Notes)
+	}
 	if css.CreatedAt != nil {
 		css.where(query, Tables.CandidateStage.Alias, Columns.CandidateStage.CreatedAt, css.CreatedAt)
 	}
 	if len(css.IDs) > 0 {
 		Filter{Columns.CandidateStage.ID, css.IDs, SearchTypeArray, false}.Apply(query)
+	}
+	if css.NotesILike != nil {
+		Filter{Columns.CandidateStage.Notes, *css.NotesILike, SearchTypeILike, false}.Apply(query)
 	}
 
 	css.apply(query)
