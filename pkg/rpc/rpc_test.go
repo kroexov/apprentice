@@ -586,6 +586,24 @@ func TestDB_CandidateService_Aggregates(t *testing.T) {
 			So(*detail.History[1].Score, ShouldEqual, 9)
 		})
 
+		Convey("GetByID: history sorted by stage.order, not stage.title", func() {
+			// Rewrite titles so alphabetical order is the reverse of stage.order.
+			// If history accidentally sorted by Title, stage[2] would land first.
+			for i, st := range stages {
+				upd := st
+				upd.Title = fmt.Sprintf("zzz-%d", len(stages)-i)
+				_, err := f.stage.Update(ctx, upd)
+				So(err, ShouldBeNil)
+			}
+
+			detail, err := f.candidate.GetByID(ctx, gamma.ID)
+			So(err, ShouldBeNil)
+			So(detail.History, ShouldHaveLength, 3)
+			So(detail.History[0].StageID, ShouldEqual, stages[0].ID)
+			So(detail.History[1].StageID, ShouldEqual, stages[1].ID)
+			So(detail.History[2].StageID, ShouldEqual, stages[2].ID)
+		})
+
 		Convey("GetByID: history and currentCandidateStage carry notes when set", func() {
 			// Attach a note to a previously-scored stage[0] row via Rate, and
 			// to gamma's current empty row via repo write (no RPC for setNotes).

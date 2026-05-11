@@ -90,7 +90,10 @@ func (s CandidateService) GetByID(ctx context.Context, id int) (*CandidateDetail
 		return nil, ErrCandidateNotFound
 	}
 
-	stages, err := s.repo.StagesByFilters(ctx, nil, db.PagerNoLimit, s.repo.FullStage())
+	stages, err := s.repo.StagesByFilters(ctx, nil, db.PagerNoLimit,
+		s.repo.FullStage(),
+		db.WithSort(db.NewSortField(db.Columns.Stage.Order, false)),
+	)
 	if err != nil {
 		return nil, InternalError(err)
 	}
