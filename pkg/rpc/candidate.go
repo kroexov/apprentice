@@ -1132,8 +1132,10 @@ func totalsFromStages(stages []db.Stage) int {
 // buildSummaryFor materialises a CandidateSummary using a pre-loaded
 // CandidateStage subset belonging to this candidate (the caller is responsible
 // for filtering). Only rows with non-NULL Score count toward TotalPoints/CompletedStages.
-// CurrentCandidateStage carries link/deadline/createdAt of the row with the
-// largest stageId — i.e. the candidate's current (or last reached) stage.
+// CurrentCandidateStage carries link/deadline/createdAt of the row matching
+// cand.CurrentStageID — the candidate's explicit current stage. Picking by
+// CurrentStageID (not max stageId) is robust against stage.reorder: after a
+// reorder, stageId no longer correlates with progress order.
 func buildSummaryFor(cand *db.Candidate, stages []db.Stage, candStages []db.CandidateStage, maxPoints int) CandidateSummary {
 	totalPoints := 0
 	completed := 0
@@ -1144,7 +1146,7 @@ func buildSummaryFor(cand *db.Candidate, stages []db.Stage, candStages []db.Cand
 			totalPoints += *cs.Score
 			completed++
 		}
-		if currentCS == nil || cs.StageID > currentCS.StageID {
+		if cs.StageID == cand.CurrentStageID {
 			currentCS = cs
 		}
 	}
