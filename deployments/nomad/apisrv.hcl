@@ -14,15 +14,13 @@ variable "db_name" {
 }
 
 variable "db_password" {
-  type      = string
-  default   = ""
-  sensitive = true
+  type    = string
+  default = ""
 }
 
 variable "sentry_dsn" {
-  type      = string
-  default   = ""
-  sensitive = true
+  type    = string
+  default = ""
 }
 
 job "apisrv" {
