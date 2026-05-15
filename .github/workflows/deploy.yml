@@ -66,6 +66,7 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key:      ${{ secrets.DEPLOY_KEY }}
           script: |
+            systemctl stop apprentice.service || true
             nomad job run \
               -var="image=ghcr.io/${{ github.repository }}:${{ github.sha }}" \
               -var="db_user=${{ secrets.DB_USER }}" \
