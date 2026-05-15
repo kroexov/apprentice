@@ -111,3 +111,45 @@ api-ts: generate
 ifeq ($(NS),"NONE")
 	$(error "You need to set NS variable before run this command. For example: NS=common make $(MAKECMDGOALS) or: make $(MAKECMDGOALS) NS=common")
 endif
+
+# ── Docker ──────────────────────────────────────────────────────────────────
+docker-build: build
+	@docker build -f deployments/Dockerfile -t $(REGISTRY):$(VERSION) -t $(REGISTRY):latest .
+
+docker-push: docker-build
+	@docker push $(REGISTRY):$(VERSION)
+	@docker push $(REGISTRY):latest
+
+# ── Nomad (production) ──────────────────────────────────────────────────────
+NOMAD_JOB := deployments/nomad/apisrv.hcl
+
+nomad-plan:
+	@nomad job plan \
+		-var="image=$(REGISTRY):$(VERSION)" \
+		$(NOMAD_JOB)
+
+nomad-run:
+	@nomad job run \
+		-var="image=$(REGISTRY):$(VERSION)" \
+		$(NOMAD_JOB)
+
+nomad-stop:
+	@nomad job stop apisrv
+
+nomad-status:
+	@nomad job status apisrv
+
+nomad-logs:
+	@nomad alloc logs -f \
+		$(shell nomad job allocs -t '{{range .}}{{.ID}}{{end}}' apisrv 2>/dev/null | head -1) \
+		apisrv
+
+# ── Nomad (local dev, requires: nomad agent -dev) ───────────────────────────
+nomad-run-local: build
+	@nomad job run \
+		-var="binary=$(shell pwd)/$(NAME)" \
+		-var="config=$(shell pwd)/cfg/local.toml" \
+		deployments/nomad/apisrv-local.hcl
+
+nomad-stop-local:
+	@nomad job stop apisrv-local

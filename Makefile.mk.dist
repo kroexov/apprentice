@@ -12,3 +12,9 @@ PGPASSWORD ?= postgres
 
 # add -race to GOFLAGS if RACE=1
 RACE=0
+
+# Docker registry for ghcr.io. Override if needed.
+REGISTRY ?= ghcr.io/kroexov/apprentice
+
+# Image tag — git short SHA, falls back to "latest" outside of a git repo.
+VERSION  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo latest)

@@ -1,0 +1,73 @@
+name: Deploy
+
+on:
+  push:
+    branches: [master]
+
+env:
+  REGISTRY:   ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.x'
+
+      - name: Build binary
+        run: CGO_ENABLED=0 go build -mod=vendor -o apisrv apisrv/cmd/apisrv
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context:    .
+          file:       deployments/Dockerfile
+          push:       true
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+          build-args: CI_PROJECT_NAME=apisrv
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy Nomad job file to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host:     ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key:      ${{ secrets.DEPLOY_KEY }}
+          source:   deployments/nomad/apisrv.hcl
+          target:   /tmp/nomad-deploy/
+
+      - name: Deploy via Nomad
+        uses: appleboy/ssh-action@v1
+        with:
+          host:     ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key:      ${{ secrets.DEPLOY_KEY }}
+          script: |
+            nomad job run \
+              -var="image=ghcr.io/${{ github.repository }}:${{ github.sha }}" \
+              -var="db_user=${{ secrets.DB_USER }}" \
+              -var="db_name=${{ secrets.DB_NAME }}" \
+              /tmp/nomad-deploy/deployments/nomad/apisrv.hcl
