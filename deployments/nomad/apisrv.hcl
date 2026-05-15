@@ -94,19 +94,6 @@ EOT
         memory = 128
       }
 
-      service {
-        name     = "apisrv"
-        provider = "nomad"
-
-        check {
-          type     = "http"
-          path     = "/status"
-          port     = 8091
-          interval = "10s"
-          timeout  = "3s"
-        }
-      }
-
       kill_signal  = "SIGTERM"
       kill_timeout = "10s"
     }
