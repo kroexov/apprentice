@@ -1,0 +1,53 @@
+name: Deploy Frontend
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'frontend-vibecode/**'
+
+jobs:
+  deploy-frontend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find zip file
+        id: zip
+        run: |
+          ZIP=$(ls frontend-vibecode/*.zip 2>/dev/null | head -1)
+          if [ -z "$ZIP" ]; then
+            echo "No zip file found in frontend-vibecode/"
+            exit 1
+          fi
+          echo "path=$ZIP" >> $GITHUB_OUTPUT
+          echo "Found: $ZIP"
+
+      - name: Copy zip to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host:     ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key:      ${{ secrets.DEPLOY_KEY }}
+          source:   ${{ steps.zip.outputs.path }}
+          target:   /tmp/frontend-upload/
+
+      - name: Copy Nomad job file to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host:     ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key:      ${{ secrets.DEPLOY_KEY }}
+          source:   deployments/nomad/frontend-deploy.hcl
+          target:   /tmp/nomad-deploy/
+
+      - name: Deploy via Nomad
+        uses: appleboy/ssh-action@v1
+        with:
+          host:     ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key:      ${{ secrets.DEPLOY_KEY }}
+          script: |
+            mv /tmp/frontend-upload/frontend-vibecode/*.zip /tmp/apprentice-frontend.zip
+            nomad job run /tmp/nomad-deploy/deployments/nomad/frontend-deploy.hcl
