@@ -55,7 +55,7 @@ job "apisrv" {
       config {
         image        = var.image
         network_mode = "host"
-        args         = ["-config", "/local/config.toml", "-json"]
+        args         = ["-config", "/local/config.toml", "-json", "-verbose"]
       }
 
       env {
