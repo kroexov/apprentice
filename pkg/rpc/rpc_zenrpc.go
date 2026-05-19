@@ -14,7 +14,7 @@ var RPC = struct {
 	AuthService      struct{ Login, Me, Register, SignUp string }
 	CandidateService struct{ Get, GetByID, Add, Update, UpdateProfile, Delete, Advance, Rate, Rollback, SetLink, SetReady, SetAvatarURL, Kanban string }
 	DashboardService struct{ Summary string }
-	MaterialService  struct{ Get, GetByID, Add, Update, Delete, SetRead, GetProgress, GetMyProgress, Score, Unscore string }
+	MaterialService  struct{ Get, GetByID, Add, Reorder, Update, Delete, SetRead, GetProgress, GetMyProgress, Score, Unscore string }
 	StageService     struct{ Get, GetByID, Add, Update, Delete, Reorder string }
 }{
 	AuthService: struct{ Login, Me, Register, SignUp string }{
@@ -41,10 +41,11 @@ var RPC = struct {
 	DashboardService: struct{ Summary string }{
 		Summary: "summary",
 	},
-	MaterialService: struct{ Get, GetByID, Add, Update, Delete, SetRead, GetProgress, GetMyProgress, Score, Unscore string }{
+	MaterialService: struct{ Get, GetByID, Add, Reorder, Update, Delete, SetRead, GetProgress, GetMyProgress, Score, Unscore string }{
 		Get:           "get",
 		GetByID:       "getbyid",
 		Add:           "add",
+		Reorder:       "reorder",
 		Update:        "update",
 		Delete:        "delete",
 		SetRead:       "setread",
@@ -2586,6 +2587,76 @@ func (MaterialService) SMD() smd.ServiceInfo {
 					500: "Internal Error",
 				},
 			},
+			"Reorder": {
+				Description: `Reorder accepts an ordered list of material ids and re-numbers order to
+match. All active materials must be present, no duplicates allowed.`,
+				Parameters: []smd.JSONSchema{
+					{
+						Name:        "ids",
+						Description: `[]int`,
+						Type:        smd.Array,
+						TypeName:    "[]",
+						Items: map[string]string{
+							"type": smd.Integer,
+						},
+					},
+				},
+				Returns: smd.JSONSchema{
+					Description: `[]Material`,
+					Type:        smd.Array,
+					TypeName:    "[]Material",
+					Items: map[string]string{
+						"$ref": "#/definitions/Material",
+					},
+					Definitions: map[string]smd.Definition{
+						"Material": {
+							Type: "object",
+							Properties: smd.PropertyList{
+								{
+									Name: "id",
+									Type: smd.Integer,
+								},
+								{
+									Name: "title",
+									Type: smd.String,
+								},
+								{
+									Name: "type",
+									Type: smd.String,
+								},
+								{
+									Name: "url",
+									Type: smd.String,
+								},
+								{
+									Name: "description",
+									Type: smd.String,
+								},
+								{
+									Name: "maxScore",
+									Type: smd.Integer,
+								},
+								{
+									Name: "order",
+									Type: smd.Integer,
+								},
+								{
+									Name: "createdAt",
+									Type: smd.String,
+								},
+								{
+									Name: "updatedAt",
+									Type: smd.String,
+								},
+							},
+						},
+					},
+				},
+				Errors: map[int]string{
+					400: "Validation Error",
+					500: "Internal Error",
+				},
+			},
 			"Update": {
 				Description: `Update edits a material (admin only). All fields from input replace the
 stored values.`,
@@ -3222,6 +3293,25 @@ func (s MaterialService) Invoke(ctx context.Context, method string, params json.
 		}
 
 		resp.Set(s.Add(ctx, args.Input))
+
+	case RPC.MaterialService.Reorder:
+		var args = struct {
+			Ids []int `json:"ids"`
+		}{}
+
+		if zenrpc.IsArray(params) {
+			if params, err = zenrpc.ConvertToObject([]string{"ids"}, params); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &args); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		resp.Set(s.Reorder(ctx, args.Ids))
 
 	case RPC.MaterialService.Update:
 		var args = struct {

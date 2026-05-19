@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"apisrv/pkg/db"
 
@@ -108,6 +109,9 @@ func (s MaterialService) Add(ctx context.Context, input MaterialInput) (*Materia
 		}
 		d.Order = nextOrder
 	}
+	// Material.UpdatedAt has `use_zero`, so AddMaterial would INSERT 0001-01-01
+	// over the schema's DEFAULT now() unless we stamp it explicitly.
+	d.UpdatedAt = time.Now()
 	created, err := s.repo.AddMaterial(ctx, d)
 	if err != nil {
 		if db.IsUniqueViolation(err) {
@@ -115,8 +119,14 @@ func (s MaterialService) Add(ctx context.Context, input MaterialInput) (*Materia
 		}
 		return nil, InternalError(err)
 	}
-	s.Print(ctx, "material added", "materialId", created.ID, "type", created.Type, "order", created.Order)
-	return NewMaterial(created), nil
+	// AddMaterial excludes CreatedAt to let the DB default fill it, so the
+	// in-memory struct's CreatedAt is still zero — re-fetch for an accurate response.
+	fresh, err := s.repo.MaterialByID(ctx, created.ID, db.WithColumns(db.TableColumns))
+	if err != nil {
+		return nil, InternalError(err)
+	}
+	s.Print(ctx, "material added", "materialId", fresh.ID, "type", fresh.Type, "order", fresh.Order)
+	return NewMaterial(fresh), nil
 }
 
 // nextMaterialOrder returns MAX("order") + 1 across active materials, or 1 if
@@ -135,6 +145,76 @@ func (s MaterialService) nextMaterialOrder(ctx context.Context) (int, error) {
 		return 1, nil
 	}
 	return last[0].Order + 1, nil
+}
+
+// Reorder accepts an ordered list of material ids and re-numbers order to
+// match. All active materials must be present, no duplicates allowed.
+//
+//zenrpc:ids []int
+//zenrpc:return []Material
+//zenrpc:400 Validation Error
+//zenrpc:500 Internal Error
+func (s MaterialService) Reorder(ctx context.Context, ids []int) ([]Material, error) {
+	var out []Material
+	err := s.dbo.RunInLock(ctx, "materials-reorder", func(tx *pg.Tx) error {
+		txRepo := s.repo.WithTransaction(tx)
+
+		all, err := txRepo.MaterialsByFilters(ctx, nil, db.PagerNoLimit, db.WithColumns(db.TableColumns))
+		if err != nil {
+			return err
+		}
+		if len(ids) != len(all) {
+			return ErrReorderInvalid
+		}
+		byID := make(map[int]*db.Material, len(all))
+		for i := range all {
+			byID[all[i].ID] = &all[i]
+		}
+		seen := make(map[int]bool, len(ids))
+		for _, id := range ids {
+			if seen[id] || byID[id] == nil {
+				return ErrReorderInvalid
+			}
+			seen[id] = true
+		}
+
+		// Two phases inside one tx + advisory lock, mirroring StageService.Reorder.
+		// First phase shifts every row to a collision-free range past reorderShift;
+		// second phase writes the target order. Keeps the partial-unique
+		// materials_order_key happy without ever using non-positive values.
+		now := time.Now()
+		for i, id := range ids {
+			m := byID[id]
+			m.Order = reorderShift + i + 1
+			m.UpdatedAt = now
+			if _, err := txRepo.UpdateMaterial(ctx, m, db.WithColumns(db.Columns.Material.Order, db.Columns.Material.UpdatedAt)); err != nil {
+				return err
+			}
+		}
+		for i, id := range ids {
+			m := byID[id]
+			m.Order = i + 1
+			m.UpdatedAt = now
+			if _, err := txRepo.UpdateMaterial(ctx, m, db.WithColumns(db.Columns.Material.Order, db.Columns.Material.UpdatedAt)); err != nil {
+				return err
+			}
+		}
+
+		out = make([]Material, 0, len(ids))
+		for _, id := range ids {
+			out = append(out, *NewMaterial(byID[id]))
+		}
+		return nil
+	})
+	if err != nil {
+		var zerr *zenrpc.Error
+		if errors.As(err, &zerr) {
+			return nil, zerr
+		}
+		return nil, InternalError(err)
+	}
+	s.Print(ctx, "materials reordered", "count", len(ids))
+	return out, nil
 }
 
 // Update edits a material (admin only). All fields from input replace the
@@ -158,6 +238,7 @@ func (s MaterialService) Update(ctx context.Context, id int, input MaterialInput
 	if err != nil {
 		return nil, err
 	}
+	d.UpdatedAt = time.Now()
 	if _, upErr := s.repo.UpdateMaterial(ctx, d, db.WithColumns(
 		db.Columns.Material.Title,
 		db.Columns.Material.Type,

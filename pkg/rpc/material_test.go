@@ -120,6 +120,189 @@ func TestDB_MaterialService_AddUpdate(t *testing.T) {
 			again := makeMaterial(t, hs, adminKey, "Old", "article", "https://example.com/o2")
 			So(again.ID, ShouldNotEqual, m.ID)
 		})
+
+		Convey("Add: createdAt and updatedAt are stamped (regression: use_zero wrote 0001-01-01)", func() {
+			zero := time.Time{}
+			before := time.Now().Add(-time.Second)
+			m := makeMaterial(t, hs, adminKey, "Stamped", "article", "https://example.com/s")
+
+			created, err := time.Parse(time.RFC3339, m.CreatedAt)
+			So(err, ShouldBeNil)
+			So(created.Equal(zero), ShouldBeFalse) // regression: was 0001-01-01
+			So(created.After(before), ShouldBeTrue)
+
+			updated, err := time.Parse(time.RFC3339, m.UpdatedAt)
+			So(err, ShouldBeNil)
+			So(updated.Equal(zero), ShouldBeFalse) // regression: was 0001-01-01
+			So(updated.After(before), ShouldBeTrue)
+
+			// Independent read-back: ensure the persisted row carries the
+			// same stamps the add response advertised.
+			r := rpcCall(t, hs, adminKey, NSMaterial, RPC.MaterialService.GetByID, m.ID)
+			So(r.Error, ShouldBeNil)
+			var fromDB Material
+			So(json.Unmarshal(r.Result, &fromDB), ShouldBeNil)
+			So(fromDB.CreatedAt, ShouldEqual, m.CreatedAt)
+			So(fromDB.UpdatedAt, ShouldEqual, m.UpdatedAt)
+		})
+
+		Convey("Update: bumps updatedAt, persists in DB, leaves createdAt alone", func() {
+			zero := time.Time{}
+			before := time.Now().Add(-time.Second)
+			m := makeMaterial(t, hs, adminKey, "Bumped", "book", "https://example.com/b")
+			prevUpdated, err := time.Parse(time.RFC3339, m.UpdatedAt)
+			So(err, ShouldBeNil)
+			So(prevUpdated.Equal(zero), ShouldBeFalse) // regression: was 0001-01-01
+
+			created, err := time.Parse(time.RFC3339, m.CreatedAt)
+			So(err, ShouldBeNil)
+
+			// RFC3339 truncates to seconds; sleep so the new stamp is strictly later.
+			time.Sleep(1100 * time.Millisecond)
+
+			r := rpcCall(t, hs, adminKey, NSMaterial, RPC.MaterialService.Update, m.ID, map[string]any{
+				"title": "Bumped", "type": "book", "url": "https://example.com/b",
+				"description": "new desc",
+			})
+			So(r.Error, ShouldBeNil)
+			var updated Material
+			So(json.Unmarshal(r.Result, &updated), ShouldBeNil)
+
+			next, err := time.Parse(time.RFC3339, updated.UpdatedAt)
+			So(err, ShouldBeNil)
+			So(next.Equal(zero), ShouldBeFalse) // regression: was 0001-01-01
+			So(next.After(prevUpdated), ShouldBeTrue)
+			So(next.After(before), ShouldBeTrue)
+
+			// createdAt must not move on Update.
+			createdAfter, err := time.Parse(time.RFC3339, updated.CreatedAt)
+			So(err, ShouldBeNil)
+			So(createdAfter.Equal(created), ShouldBeTrue)
+
+			// Independent read-back: the DB row carries the same timestamps the
+			// update response advertised. Catches a bug where the response is
+			// stamped in-memory but the persisted row diverges.
+			r = rpcCall(t, hs, adminKey, NSMaterial, RPC.MaterialService.GetByID, m.ID)
+			So(r.Error, ShouldBeNil)
+			var fromDB Material
+			So(json.Unmarshal(r.Result, &fromDB), ShouldBeNil)
+			So(fromDB.UpdatedAt, ShouldEqual, updated.UpdatedAt)
+			So(fromDB.CreatedAt, ShouldEqual, updated.CreatedAt)
+		})
+
+		Convey("Update twice: second call bumps updatedAt past the first update", func() {
+			m := makeMaterial(t, hs, adminKey, "Twice", "book", "https://example.com/2x")
+
+			time.Sleep(1100 * time.Millisecond)
+			r := rpcCall(t, hs, adminKey, NSMaterial, RPC.MaterialService.Update, m.ID, map[string]any{
+				"title": "Twice", "type": "book", "url": "https://example.com/2x",
+				"description": "first",
+			})
+			So(r.Error, ShouldBeNil)
+			var first Material
+			So(json.Unmarshal(r.Result, &first), ShouldBeNil)
+			firstUpdated, err := time.Parse(time.RFC3339, first.UpdatedAt)
+			So(err, ShouldBeNil)
+
+			time.Sleep(1100 * time.Millisecond)
+			r = rpcCall(t, hs, adminKey, NSMaterial, RPC.MaterialService.Update, m.ID, map[string]any{
+				"title": "Twice", "type": "book", "url": "https://example.com/2x",
+				"description": "second",
+			})
+			So(r.Error, ShouldBeNil)
+			var second Material
+			So(json.Unmarshal(r.Result, &second), ShouldBeNil)
+			secondUpdated, err := time.Parse(time.RFC3339, second.UpdatedAt)
+			So(err, ShouldBeNil)
+
+			So(secondUpdated.After(firstUpdated), ShouldBeTrue)
+		})
+	})
+}
+
+// =============================================================================
+// MaterialService.Reorder — full permutation under advisory lock
+// =============================================================================
+
+func TestDB_MaterialService_Reorder(t *testing.T) {
+	Convey("MaterialService.Reorder", t, func() {
+		hs, dbo := newHTTPHarness(t)
+		ctx := t.Context()
+		adminKey := seedAdmin(t, ctx, dbo, "admin.matreorder")
+
+		// Seed three materials with auto-assigned orders 1,2,3.
+		m1 := makeMaterial(t, hs, adminKey, "Alpha", "book", "https://example.com/a")
+		m2 := makeMaterial(t, hs, adminKey, "Bravo", "article", "https://example.com/b")
+		m3 := makeMaterial(t, hs, adminKey, "Charlie", "video", "https://example.com/c")
+		So(m1.Order, ShouldEqual, 1)
+		So(m2.Order, ShouldEqual, 2)
+		So(m3.Order, ShouldEqual, 3)
+
+		Convey("full permutation succeeds and returns the new order", func() {
+			r := rpcCall(t, hs, adminKey, NSMaterial, RPC.MaterialService.Reorder,
+				[]int{m3.ID, m1.ID, m2.ID})
+			So(r.Error, ShouldBeNil)
+			var out []Material
+			So(json.Unmarshal(r.Result, &out), ShouldBeNil)
+			So(out, ShouldHaveLength, 3)
+			So(out[0].ID, ShouldEqual, m3.ID)
+			So(out[0].Order, ShouldEqual, 1)
+			So(out[1].ID, ShouldEqual, m1.ID)
+			So(out[1].Order, ShouldEqual, 2)
+			So(out[2].ID, ShouldEqual, m2.ID)
+			So(out[2].Order, ShouldEqual, 3)
+		})
+
+		Convey("post-reorder catalog has no non-positive orders", func() {
+			r := rpcCall(t, hs, adminKey, NSMaterial, RPC.MaterialService.Reorder,
+				[]int{m3.ID, m2.ID, m1.ID})
+			So(r.Error, ShouldBeNil)
+			r = rpcCall(t, hs, adminKey, NSMaterial, RPC.MaterialService.Get, nil)
+			So(r.Error, ShouldBeNil)
+			var list []Material
+			So(json.Unmarshal(r.Result, &list), ShouldBeNil)
+			for _, m := range list {
+				So(m.Order, ShouldBeGreaterThanOrEqualTo, 1)
+			}
+		})
+
+		Convey("rejects mismatched length", func() {
+			r := rpcCall(t, hs, adminKey, NSMaterial, RPC.MaterialService.Reorder,
+				[]int{m1.ID, m2.ID})
+			So(r.Error, ShouldNotBeNil)
+			So(r.Error.Code, ShouldEqual, http.StatusBadRequest)
+		})
+
+		Convey("rejects unknown id", func() {
+			r := rpcCall(t, hs, adminKey, NSMaterial, RPC.MaterialService.Reorder,
+				[]int{m1.ID, m2.ID, 999999})
+			So(r.Error, ShouldNotBeNil)
+			So(r.Error.Code, ShouldEqual, http.StatusBadRequest)
+		})
+
+		Convey("rejects duplicate id", func() {
+			r := rpcCall(t, hs, adminKey, NSMaterial, RPC.MaterialService.Reorder,
+				[]int{m1.ID, m1.ID, m2.ID})
+			So(r.Error, ShouldNotBeNil)
+			So(r.Error.Code, ShouldEqual, http.StatusBadRequest)
+		})
+
+		Convey("rejects soft-deleted id (not in active set)", func() {
+			r := rpcCall(t, hs, adminKey, NSMaterial, RPC.MaterialService.Delete, m2.ID)
+			So(r.Error, ShouldBeNil)
+			// 2 active left, but caller still passes the dead one.
+			r = rpcCall(t, hs, adminKey, NSMaterial, RPC.MaterialService.Reorder,
+				[]int{m1.ID, m2.ID, m3.ID})
+			So(r.Error, ShouldNotBeNil)
+			So(r.Error.Code, ShouldEqual, http.StatusBadRequest)
+		})
+
+		Convey("admin-only: anonymous → 401", func() {
+			r := rpcCall(t, hs, "", NSMaterial, RPC.MaterialService.Reorder,
+				[]int{m1.ID, m2.ID, m3.ID})
+			So(r.Error, ShouldNotBeNil)
+			So(r.Error.Code, ShouldEqual, http.StatusUnauthorized)
+		})
 	})
 }
 
