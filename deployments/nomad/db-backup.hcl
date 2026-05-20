@@ -29,8 +29,8 @@ job "db-backup" {
           echo "[db-backup] starting backup of database '${DB_NAME}'"
           pg_dump -U ${DB_USER} ${DB_NAME} | gzip > "$BACKUP_FILE"
           echo "[db-backup] dump created: $BACKUP_FILE"
-          echo "[db-backup] uploading to Google Drive (apprentice/)..."
-          /usr/bin/rclone --config /etc/rclone/rclone.conf copy "$BACKUP_FILE" b2:apprentice-backups/
+          echo "[db-backup] uploading to Google Drive gdrive:apprentice/..."
+          /usr/bin/rclone --config /etc/rclone/rclone.conf copy "$BACKUP_FILE" gdrive:apprentice/
           echo "[db-backup] upload complete"
           echo "[db-backup] cleaning up local file"
           rm -f "$BACKUP_FILE"
