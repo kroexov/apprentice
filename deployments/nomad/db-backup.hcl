@@ -1,11 +1,6 @@
-variable "db_name" {
+variable "exclude_dbs" {
   type    = string
-  default = "apprentice"
-}
-
-variable "db_user" {
-  type    = string
-  default = "postgres"
+  default = "template0,template1,postgres"
 }
 
 job "db-backup" {
@@ -25,24 +20,35 @@ job "db-backup" {
         command = "/bin/bash"
         args = ["-c", <<-EOF
           set -e
-          BACKUP_FILE="/tmp/apprentice-$(date +%Y%m%d-%H%M%S).sql.gz"
-          echo "[db-backup] starting backup of database '${DB_NAME}'"
-          pg_dump -U ${DB_USER} ${DB_NAME} | gzip > "$BACKUP_FILE"
-          echo "[db-backup] dump created: $BACKUP_FILE"
-          echo "[db-backup] uploading to Google Drive gdrive:apprentice/..."
-          /usr/bin/rclone --config /etc/rclone/rclone.conf copy "$BACKUP_FILE" gdrive:apprentice/
-          echo "[db-backup] upload complete"
-          echo "[db-backup] cleaning up local file"
-          rm -f "$BACKUP_FILE"
-          echo "[db-backup] done"
+
+          EXCLUDE="${EXCLUDE_DBS}"
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+          echo "[db-backup] fetching database list..."
+          DBS=$(sudo -u postgres psql -t -A -c "SELECT datname FROM pg_database WHERE datistemplate = false")
+
+          for DB in $DBS; do
+            if echo ",$EXCLUDE," | grep -q ",$DB,"; then
+              echo "[db-backup] skipping '$DB' (excluded)"
+              continue
+            fi
+
+            BACKUP_FILE="/tmp/${DB}-${TIMESTAMP}.sql.gz"
+            echo "[db-backup] dumping '$DB'..."
+            sudo -u postgres pg_dump "$DB" | gzip > "$BACKUP_FILE"
+            echo "[db-backup] uploading '$DB' to Google Drive..."
+            /usr/bin/rclone --config /etc/rclone/rclone.conf copy "$BACKUP_FILE" gdrive:${DB}/
+            echo "[db-backup] '$DB' uploaded"
+            rm -f "$BACKUP_FILE"
+          done
+
+          echo "[db-backup] all databases backed up"
         EOF
         ]
       }
 
       env {
-        DB_NAME = var.db_name
-        DB_USER = var.db_user
-        PGHOST  = "localhost"
+        EXCLUDE_DBS = var.exclude_dbs
       }
 
       resources {
