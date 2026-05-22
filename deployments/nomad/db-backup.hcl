@@ -22,24 +22,24 @@ job "db-backup" {
           set -e
 
           EXCLUDE="${EXCLUDE_DBS}"
-          TIMESTAMP=$$(date +%Y%m%d-%H%M%S)
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 
           echo "[db-backup] fetching database list..."
-          DBS=$$(sudo -u postgres psql -t -A -c "SELECT datname FROM pg_database WHERE datistemplate = false")
+          DBS=$(sudo -u postgres psql -t -A -c "SELECT datname FROM pg_database WHERE datistemplate = false")
 
-          for DB in $$DBS; do
-            if echo ",$$EXCLUDE," | grep -q ",$$DB,"; then
-              echo "[db-backup] skipping '$$DB' (excluded)"
+          for DB in $DBS; do
+            if echo ",$EXCLUDE," | grep -q ",$DB,"; then
+              echo "[db-backup] skipping '$DB' (excluded)"
               continue
             fi
 
-            BACKUP_FILE="/tmp/$${DB}-$${TIMESTAMP}.sql.gz"
-            echo "[db-backup] dumping '$$DB'..."
-            sudo -u postgres pg_dump "$$DB" | gzip > "$$BACKUP_FILE"
-            echo "[db-backup] uploading '$$DB' to Google Drive..."
-            /usr/bin/rclone --config /etc/rclone/rclone.conf copy "$$BACKUP_FILE" gdrive:$${DB}/
-            echo "[db-backup] '$$DB' uploaded"
-            rm -f "$$BACKUP_FILE"
+            BACKUP_FILE="/tmp/$DB-$TIMESTAMP.sql.gz"
+            echo "[db-backup] dumping '$DB'..."
+            sudo -u postgres pg_dump "$DB" | gzip > "$BACKUP_FILE"
+            echo "[db-backup] uploading '$DB' to Google Drive..."
+            /usr/bin/rclone --config /etc/rclone/rclone.conf copy "$BACKUP_FILE" gdrive:$DB/
+            echo "[db-backup] '$DB' uploaded"
+            rm -f "$BACKUP_FILE"
           done
 
           echo "[db-backup] all databases backed up"
