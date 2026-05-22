@@ -40,6 +40,11 @@ job "db-backup" {
             /usr/bin/rclone --config /etc/rclone/rclone.conf copy "$BACKUP_FILE" gdrive:$DB/
             echo "[db-backup] '$DB' uploaded"
             rm -f "$BACKUP_FILE"
+            echo "[db-backup] rotating old backups for '$DB' (keeping 5)..."
+            /usr/bin/rclone --config /etc/rclone/rclone.conf ls gdrive:$DB/ | sort | head -n -5 | awk '{print $2}' | while read f; do
+              /usr/bin/rclone --config /etc/rclone/rclone.conf deletefile gdrive:$DB/$f
+              echo "[db-backup] deleted old backup: $f"
+            done
           done
 
           echo "[db-backup] all databases backed up"
