@@ -500,6 +500,7 @@ type StageSearch struct {
 	MaxScore         *int
 	DeadlineDays     *int
 	StatusID         *int
+	Url              *string
 	IDs              []int
 	NotID            *int
 	TitleILike       *string
@@ -537,6 +538,9 @@ func (ss *StageSearch) Apply(query *orm.Query) *orm.Query {
 	}
 	if ss.StatusID != nil {
 		ss.where(query, Tables.Stage.Alias, Columns.Stage.StatusID, ss.StatusID)
+	}
+	if ss.Url != nil {
+		ss.where(query, Tables.Stage.Alias, Columns.Stage.Url, ss.Url)
 	}
 	if len(ss.IDs) > 0 {
 		Filter{Columns.Stage.ID, ss.IDs, SearchTypeArray, false}.Apply(query)

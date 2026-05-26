@@ -66,6 +66,8 @@
               comment="дни на прохождение этапа от попадания на него; 0 = без дедлайна"></column>
       <column name="statusId" type="integer" nullable="false" default="1"
               comment="enabled=1, disabled=2, deleted=3"></column>
+      <column name="url" type="text" nullable="true"
+              comment="внешняя ссылка на этап (опционально)"></column>
       <pk name="stages_pkey">
         <column name="stageId"></column>
       </pk>
@@ -75,6 +77,7 @@
       <check name="stages_maxScore_check"><![CDATA["maxScore" > 0 AND "maxScore" <= 100]]></check>
       <check name="stages_deadlineDays_check"><![CDATA["deadlineDays" >= 0 AND "deadlineDays" <= 365]]></check>
       <check name="stages_alias_check"><![CDATA[alias ~ '^[a-z0-9.\-_]{2,64}$']]></check>
+      <check name="stages_url_check"><![CDATA[char_length(url) <= 2048]]></check>
       <!-- Partial unique indexes ignore soft-deleted rows so alias/order are reusable. -->
       <index name="stages_alias_key" using="btree" unique="true" where="&quot;statusId&quot; &lt;&gt; 3">
         <column name="alias"></column>

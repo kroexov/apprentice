@@ -461,6 +461,11 @@ func (CandidateService) SMD() smd.ServiceInfo {
 									Name: "deadlineDays",
 									Type: smd.Integer,
 								},
+								{
+									Name:     "url",
+									Optional: true,
+									Type:     smd.String,
+								},
 							},
 						},
 						"CandidateStageSummary": {
@@ -649,6 +654,11 @@ func (CandidateService) SMD() smd.ServiceInfo {
 								{
 									Name: "deadlineDays",
 									Type: smd.Integer,
+								},
+								{
+									Name:     "url",
+									Optional: true,
+									Type:     smd.String,
 								},
 							},
 						},
@@ -1919,6 +1929,11 @@ JSON tag, and Candidate.AvatarURL ships json:avatarUrl — keep them in sync.`,
 								{
 									Name: "deadlineDays",
 									Type: smd.Integer,
+								},
+								{
+									Name:     "url",
+									Optional: true,
+									Type:     smd.String,
 								},
 							},
 						},
@@ -3476,6 +3491,11 @@ func (StageService) SMD() smd.ServiceInfo {
 									Name: "deadlineDays",
 									Type: smd.Integer,
 								},
+								{
+									Name:     "url",
+									Optional: true,
+									Type:     smd.String,
+								},
 							},
 						},
 					},
@@ -3531,6 +3551,11 @@ func (StageService) SMD() smd.ServiceInfo {
 							Name: "deadlineDays",
 							Type: smd.Integer,
 						},
+						{
+							Name:     "url",
+							Optional: true,
+							Type:     smd.String,
+						},
 					},
 				},
 				Errors: map[int]string{
@@ -3579,6 +3604,11 @@ func (StageService) SMD() smd.ServiceInfo {
 								Name: "deadlineDays",
 								Type: smd.Integer,
 							},
+							{
+								Name:     "url",
+								Optional: true,
+								Type:     smd.String,
+							},
 						},
 					},
 				},
@@ -3619,6 +3649,11 @@ func (StageService) SMD() smd.ServiceInfo {
 						{
 							Name: "deadlineDays",
 							Type: smd.Integer,
+						},
+						{
+							Name:     "url",
+							Optional: true,
+							Type:     smd.String,
 						},
 					},
 				},
@@ -3667,6 +3702,11 @@ func (StageService) SMD() smd.ServiceInfo {
 							{
 								Name: "deadlineDays",
 								Type: smd.Integer,
+							},
+							{
+								Name:     "url",
+								Optional: true,
+								Type:     smd.String,
 							},
 						},
 					},
@@ -3756,6 +3796,11 @@ All enabled stages must be present, no duplicates allowed.`,
 								{
 									Name: "deadlineDays",
 									Type: smd.Integer,
+								},
+								{
+									Name:     "url",
+									Optional: true,
+									Type:     smd.String,
 								},
 							},
 						},

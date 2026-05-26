@@ -57,14 +57,15 @@ func formatTimePtr(t *time.Time) *string {
 // ============================================================================
 
 type Stage struct {
-	ID           int    `json:"id"`
-	Alias        string `json:"alias"`
-	Order        int    `json:"order"`
-	Title        string `json:"title"`
-	ShortTitle   string `json:"shortTitle"`
-	Description  string `json:"description"`
-	MaxScore     int    `json:"maxScore"`
-	DeadlineDays int    `json:"deadlineDays"`
+	ID           int     `json:"id"`
+	Alias        string  `json:"alias"`
+	Order        int     `json:"order"`
+	Title        string  `json:"title"`
+	ShortTitle   string  `json:"shortTitle"`
+	Description  string  `json:"description"`
+	MaxScore     int     `json:"maxScore"`
+	DeadlineDays int     `json:"deadlineDays"`
+	URL          *string `json:"url"`
 }
 
 func NewStage(d *db.Stage) *Stage {
@@ -80,6 +81,7 @@ func NewStage(d *db.Stage) *Stage {
 		Description:  d.Description,
 		MaxScore:     d.MaxScore,
 		DeadlineDays: d.DeadlineDays,
+		URL:          d.Url,
 	}
 }
 
@@ -87,6 +89,9 @@ func (s *Stage) ToDB() *db.Stage {
 	if s == nil {
 		return nil
 	}
+	// url already validated in StageService.isValid; normalizeLink here trims and
+	// collapses empty → nil so an absent link is stored as NULL.
+	u, _ := normalizeLink(s.URL)
 	return &db.Stage{
 		ID:           s.ID,
 		Alias:        s.Alias,
@@ -97,6 +102,7 @@ func (s *Stage) ToDB() *db.Stage {
 		MaxScore:     s.MaxScore,
 		DeadlineDays: s.DeadlineDays,
 		StatusID:     db.StatusEnabled,
+		Url:          u,
 	}
 }
 

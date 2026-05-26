@@ -83,11 +83,11 @@ db-test:
 NS := "apprentice"
 
 mfd-xml:
-	@mfd-generator xml -c "postgres://$(PGUSER):$(PGPASSWORD)@$(PGHOST):$(PGPORT)/$(PGDATABASE)?sslmode=disable" -m ./docs/model/apprentice.mfd -t public.*
+	@mfd-generator xml -c "postgres://$(PGUSER):$(PGPASSWORD)@$(PGHOST):$(PGPORT)/$(PGDATABASE)?sslmode=disable" -m ./docs/model/$(NAME).mfd -t public.*
 mfd-model:
-	@mfd-generator model -m ./docs/model/apprentice.mfd -p db -o ./pkg/db
+	@mfd-generator model -m ./docs/model/$(NAME).mfd -p db -o ./pkg/db
 mfd-repo: --check-ns
-	@mfd-generator repo -m ./docs/model/apprentice.mfd -p db -o ./pkg/db -n $(NS)
+	@mfd-generator repo -m ./docs/model/$(NAME).mfd -p db -o ./pkg/db -n $(NS)
 mfd-db-test:
 	@mfd-generator dbtest -m docs/model/$(NAME).mfd -o ./pkg/db/test -x $(NAME)/pkg/db
 mfd-vt-xml:

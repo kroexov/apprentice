@@ -137,6 +137,7 @@ func (s StageService) Update(ctx context.Context, stage Stage) (bool, error) {
 		cur.Description = stage.Description
 		cur.MaxScore = stage.MaxScore
 		cur.DeadlineDays = stage.DeadlineDays
+		cur.Url, _ = normalizeLink(stage.URL)
 
 		ok, err = txRepo.UpdateStage(ctx, cur, db.WithColumns(
 			db.Columns.Stage.Alias,
@@ -145,6 +146,7 @@ func (s StageService) Update(ctx context.Context, stage Stage) (bool, error) {
 			db.Columns.Stage.Description,
 			db.Columns.Stage.MaxScore,
 			db.Columns.Stage.DeadlineDays,
+			db.Columns.Stage.Url,
 		))
 		if err != nil {
 			if e := mapStageUniqueErr(err); e != nil {
@@ -308,6 +310,11 @@ func (s StageService) isValid(ctx context.Context, stage Stage, isUpdate bool) V
 		v.AppendMin("deadlineDays", 0)
 	case stage.DeadlineDays > 365:
 		v.AppendMax("deadlineDays", 365)
+	}
+	// url is optional; when present it must be a valid http(s) link ≤ 2048 chars
+	// (same rule as material.url / candidateStage.link — see normalizeLink).
+	if _, err := normalizeLink(stage.URL); err != nil {
+		v.Append("url", FieldErrorFormat)
 	}
 	if stage.Order < 1 {
 		v.AppendMin("order", 1)

@@ -33,7 +33,7 @@ var Columns = struct {
 		Candidate, Stage string
 	}
 	Stage struct {
-		ID, Alias, Order, Title, ShortTitle, Description, MaxScore, DeadlineDays, StatusID string
+		ID, Alias, Order, Title, ShortTitle, Description, MaxScore, DeadlineDays, StatusID, Url string
 	}
 	CandidateMaterial struct {
 		ID, CandidateID, MaterialID, ReadAt, Score, ScoredAt, ScoredBy, Notes, CreatedAt string
@@ -139,7 +139,7 @@ var Columns = struct {
 		Stage:     "Stage",
 	},
 	Stage: struct {
-		ID, Alias, Order, Title, ShortTitle, Description, MaxScore, DeadlineDays, StatusID string
+		ID, Alias, Order, Title, ShortTitle, Description, MaxScore, DeadlineDays, StatusID, Url string
 	}{
 		ID:           "stageId",
 		Alias:        "alias",
@@ -150,6 +150,7 @@ var Columns = struct {
 		MaxScore:     "maxScore",
 		DeadlineDays: "deadlineDays",
 		StatusID:     "statusId",
+		Url:          "url",
 	},
 	CandidateMaterial: struct {
 		ID, CandidateID, MaterialID, ReadAt, Score, ScoredAt, ScoredBy, Notes, CreatedAt string
@@ -355,15 +356,16 @@ type CandidateStage struct {
 type Stage struct {
 	tableName struct{} `pg:"stages,alias:t,discard_unknown_columns"`
 
-	ID           int    `pg:"stageId,pk"`
-	Alias        string `pg:"alias,use_zero"`
-	Order        int    `pg:"order,use_zero"`
-	Title        string `pg:"title,use_zero"`
-	ShortTitle   string `pg:"shortTitle,use_zero"`
-	Description  string `pg:"description,use_zero"`
-	MaxScore     int    `pg:"maxScore,use_zero"`
-	DeadlineDays int    `pg:"deadlineDays,use_zero"`
-	StatusID     int    `pg:"statusId,use_zero"`
+	ID           int     `pg:"stageId,pk"`
+	Alias        string  `pg:"alias,use_zero"`
+	Order        int     `pg:"order,use_zero"`
+	Title        string  `pg:"title,use_zero"`
+	ShortTitle   string  `pg:"shortTitle,use_zero"`
+	Description  string  `pg:"description,use_zero"`
+	MaxScore     int     `pg:"maxScore,use_zero"`
+	DeadlineDays int     `pg:"deadlineDays,use_zero"`
+	StatusID     int     `pg:"statusId,use_zero"`
+	Url          *string `pg:"url"`
 }
 
 type CandidateMaterial struct {

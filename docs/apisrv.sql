@@ -149,10 +149,12 @@ CREATE TABLE "stages" (
 	"maxScore" int4 NOT NULL DEFAULT 10,
 	"deadlineDays" int4 NOT NULL DEFAULT 0,
 	"statusId" int4 NOT NULL DEFAULT 1,
+	"url" text,
 	CONSTRAINT "stages_pkey" PRIMARY KEY ("stageId"),
 	CONSTRAINT "stages_maxScore_check" CHECK ("maxScore" > 0 AND "maxScore" <= 100),
 	CONSTRAINT "stages_deadlineDays_check" CHECK ("deadlineDays" >= 0 AND "deadlineDays" <= 365),
-	CONSTRAINT "stages_alias_check" CHECK ("alias" ~ '^[a-z0-9.\-_]{2,64}$')
+	CONSTRAINT "stages_alias_check" CHECK ("alias" ~ '^[a-z0-9.\-_]{2,64}$'),
+	CONSTRAINT "stages_url_check" CHECK (char_length("url") <= 2048)
 );
 
 -- Partial unique indexes ignore soft-deleted rows (statusId = 3) so alias/order
