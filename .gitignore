@@ -11,3 +11,5 @@ Makefile.mk
 # generated docs (regenerate via `make generate` / `make type-script-client`)
 docs/api.ts
 docs/RPC.md
+
+topsrv

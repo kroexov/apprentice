@@ -17,11 +17,11 @@ job "db-recover" {
         args = ["-c", <<-EOF
           set -e
 
-          DB="${NOMAD_META_db_name}"
+          DB="$${NOMAD_META_db_name}"
           RCLONE_CONFIG="/etc/rclone/rclone.conf"
 
-          if [[ -n "${NOMAD_META_backup_file:-}" ]]; then
-            CHOSEN="${NOMAD_META_backup_file}"
+          if [[ -n "$${NOMAD_META_backup_file:-}" ]]; then
+            CHOSEN="$${NOMAD_META_backup_file}"
           else
             echo "[recover] Finding latest backup for '$DB'..."
             CHOSEN=$(rclone --config "$RCLONE_CONFIG" ls "gdrive:$DB/" | sort | tail -1 | awk '{print $2}')
